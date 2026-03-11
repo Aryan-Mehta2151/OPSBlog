@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16
+    container_name: opsblog-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ops_blog
+    ports:
+      - "5432:5432"
+    volumes:
+      - opsblog_pgdata:/var/lib/postgresql/data
+
+volumes:
+  opsblog_pgdata:
