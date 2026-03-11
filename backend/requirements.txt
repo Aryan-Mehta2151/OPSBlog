@@ -21,9 +21,5 @@ langchain-text-splitters
 requests
 
 pymupdf
-transformers
-torch
 Pillow
 pytesseract
-scikit-learn
-faiss-cpu  
