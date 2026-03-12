@@ -7,7 +7,7 @@
 
 .page-header h1 {
   font-size: 1.5rem;
-  color: #1f2937;
+  color: var(--color-text-strong);
 }
 
 .btn {
@@ -25,32 +25,32 @@
 }
 
 .btn-primary {
-  background: #2563eb;
+  background: var(--color-primary);
   color: #fff;
 }
 
 .btn-primary:hover {
-  background: #1d4ed8;
+  background: var(--color-primary-hover);
 }
 
 .btn-secondary {
-  background: #f3f4f6;
-  color: #374151;
-  border: 1px solid #d1d5db;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
 }
 
 .btn-secondary:hover {
-  background: #e5e7eb;
+  background: var(--color-hover);
 }
 
 .btn-danger {
-  background: #fee2e2;
-  color: #dc2626;
-  border: 1px solid #fecaca;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger-border);
 }
 
 .btn-danger:hover {
-  background: #fecaca;
+  background: color-mix(in srgb, var(--color-danger) 18%, var(--color-surface));
 }
 
 .btn-sm {
@@ -61,21 +61,21 @@
 .loading {
   text-align: center;
   padding: 3rem;
-  color: #6b7280;
+  color: var(--color-text-muted);
 }
 
 .error-msg {
-  background: #fef2f2;
-  color: #dc2626;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
   padding: 1rem;
   border-radius: 8px;
-  border: 1px solid #fecaca;
+  border: 1px solid var(--color-danger-border);
 }
 
 .empty-state {
   text-align: center;
   padding: 3rem;
-  color: #9ca3af;
+  color: var(--color-text-faint);
 }
 
 .blog-grid {
@@ -85,18 +85,18 @@
 }
 
 .blog-card {
-  background: #fff;
+  background: var(--color-surface);
   padding: 1.25rem 1.5rem;
   border-radius: 10px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border);
   text-decoration: none;
   color: inherit;
   transition: all 0.2s;
 }
 
 .blog-card:hover {
-  border-color: #2563eb;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .blog-card-header {
@@ -107,7 +107,7 @@
 
 .blog-card-header h3 {
   font-size: 1.05rem;
-  color: #1f2937;
+  color: var(--color-text-strong);
   margin: 0;
 }
 
@@ -120,12 +120,12 @@
 }
 
 .status-badge.published {
-  background: #dcfce7;
-  color: #16a34a;
+  background: var(--color-success-soft);
+  color: var(--color-success);
 }
 
 .status-badge.draft {
-  background: #fef3c7;
+  background: color-mix(in srgb, #f59e0b 18%, var(--color-surface));
   color: #d97706;
 }
 
@@ -134,7 +134,7 @@
   gap: 1rem;
   margin-top: 0.5rem;
   font-size: 0.8rem;
-  color: #9ca3af;
+  color: var(--color-text-faint);
 }
 
 .blog-card-meta span {

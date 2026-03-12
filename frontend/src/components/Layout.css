@@ -1,6 +1,6 @@
 .layout {
   min-height: 100vh;
-  background: #f8fafc;
+  background: var(--color-bg);
 }
 
 .navbar {
@@ -9,8 +9,8 @@
   justify-content: space-between;
   padding: 0 1.5rem;
   height: 56px;
-  background: #fff;
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -25,13 +25,13 @@
 .nav-brand {
   font-size: 1.25rem;
   font-weight: 700;
-  color: #2563eb;
+  color: var(--color-primary);
   text-decoration: none;
 }
 
 .nav-org {
-  background: #eff6ff;
-  color: #2563eb;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
   padding: 0.2rem 0.6rem;
   border-radius: 6px;
   font-size: 0.8rem;
@@ -47,7 +47,7 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  color: #374151;
+  color: var(--color-text);
   text-decoration: none;
   font-size: 0.9rem;
   font-weight: 500;
@@ -57,8 +57,8 @@
 }
 
 .nav-links a:hover {
-  background: #f3f4f6;
-  color: #2563eb;
+  background: var(--color-hover);
+  color: var(--color-primary);
 }
 
 .nav-right {
@@ -67,17 +67,34 @@
   gap: 1rem;
 }
 
+.nav-theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.nav-theme-toggle:hover {
+  background: var(--color-hover);
+}
+
 .nav-user {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   font-size: 0.875rem;
-  color: #6b7280;
+  color: var(--color-text-muted);
 }
 
 .badge-admin {
-  background: #dcfce7;
-  color: #16a34a;
+  background: var(--color-success-soft);
+  color: var(--color-success);
   padding: 0.1rem 0.45rem;
   border-radius: 4px;
   font-size: 0.7rem;
@@ -90,19 +107,19 @@
   align-items: center;
   gap: 0.3rem;
   background: none;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border);
   padding: 0.4rem 0.75rem;
   border-radius: 6px;
-  color: #6b7280;
+  color: var(--color-text-muted);
   cursor: pointer;
   font-size: 0.85rem;
   transition: all 0.2s;
 }
 
 .nav-logout:hover {
-  background: #fef2f2;
-  color: #dc2626;
-  border-color: #fecaca;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
 }
 
 .main-content {

@@ -3,28 +3,29 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f0f2f5;
+  background: var(--color-bg);
 }
 
 .auth-card {
-  background: #fff;
+  background: var(--color-surface);
   padding: 2.5rem;
   border-radius: 12px;
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-soft);
   width: 100%;
   max-width: 400px;
+  border: 1px solid var(--color-border);
 }
 
 .auth-card h1 {
   text-align: center;
-  color: #2563eb;
+  color: var(--color-primary);
   margin-bottom: 0.25rem;
   font-size: 1.75rem;
 }
 
 .auth-card h2 {
   text-align: center;
-  color: #374151;
+  color: var(--color-text);
   margin-bottom: 1.5rem;
   font-weight: 500;
   font-size: 1.1rem;
@@ -39,30 +40,32 @@
 .auth-card label {
   font-size: 0.875rem;
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text);
   margin-top: 0.5rem;
 }
 
 .auth-card input,
 .auth-card select {
   padding: 0.625rem 0.75rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
   font-size: 0.95rem;
   outline: none;
   transition: border-color 0.2s;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
 }
 
 .auth-card input:focus,
 .auth-card select:focus {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .auth-card button {
   margin-top: 1rem;
   padding: 0.75rem;
-  background: #2563eb;
+  background: var(--color-primary);
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -73,7 +76,7 @@
 }
 
 .auth-card button:hover:not(:disabled) {
-  background: #1d4ed8;
+  background: var(--color-primary-hover);
 }
 
 .auth-card button:disabled {
@@ -82,24 +85,24 @@
 }
 
 .auth-error {
-  background: #fef2f2;
-  color: #dc2626;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
   padding: 0.75rem;
   border-radius: 8px;
   font-size: 0.875rem;
   margin-bottom: 0.5rem;
-  border: 1px solid #fecaca;
+  border: 1px solid var(--color-danger-border);
 }
 
 .auth-switch {
   text-align: center;
   margin-top: 1rem;
   font-size: 0.875rem;
-  color: #6b7280;
+  color: var(--color-text-muted);
 }
 
 .auth-switch a {
-  color: #2563eb;
+  color: var(--color-primary);
   text-decoration: none;
   font-weight: 500;
 }

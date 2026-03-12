@@ -34,6 +34,7 @@ export default function SearchPage() {
   const [indexMsg, setIndexMsg] = useState('');
   const [chunks, setChunks] = useState<any[]>([]);
   const [showChunks, setShowChunks] = useState(false);
+  const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -175,57 +176,53 @@ export default function SearchPage() {
     }
   };
 
+  const toggleSources = (turnId: string) => {
+    setExpandedSources((prev) => ({
+      ...prev,
+      [turnId]: !prev[turnId],
+    }));
+  };
+
   return (
-    <div>
-      <div className="page-header">
-        <h1>AI Search</h1>
-        {isAdmin && (
-          <div className="admin-search-actions">
-            <button type="button" className="btn btn-secondary btn-sm" onClick={handleIndex} disabled={indexing}>
-              <FiRefreshCw className={indexing ? 'spin' : ''} />
-              {indexing ? 'Indexing...' : 'Re-index'}
-            </button>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={handleViewChunks}>
-              <FiDatabase /> {showChunks ? 'Hide Chunks' : 'View Chunks'}
+    <div className="search-page">
+      <div className="search-toolbar">
+        <div className="page-header search-toolbar-header">
+          <h1>AI Search</h1>
+          {isAdmin && (
+            <div className="admin-search-actions">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={handleIndex} disabled={indexing}>
+                <FiRefreshCw className={indexing ? 'spin' : ''} />
+                {indexing ? 'Indexing...' : 'Re-index'}
+              </button>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={handleViewChunks}>
+                <FiDatabase /> {showChunks ? 'Hide Chunks' : 'View Chunks'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <form className="search-form" onSubmit={handleSearch}>
+          <div className="search-input-row">
+            <input
+              type="text"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="Ask a question about your blog content..."
+            />
+            <select value={detailLevel} onChange={(e) => setDetailLevel(e.target.value)}>
+              <option value="brief">Brief</option>
+              <option value="normal">Normal</option>
+              <option value="detailed">Detailed</option>
+            </select>
+            <button type="submit" className="btn btn-primary" disabled={searching}>
+              <FiSearch /> {searching ? 'Searching...' : 'Search'}
             </button>
           </div>
-        )}
+        </form>
+
+        {indexMsg && <div className="success-msg">{indexMsg}</div>}
+        {error && <div className="error-msg">{error}</div>}
       </div>
-
-      {indexMsg && <div className="success-msg">{indexMsg}</div>}
-      {error && <div className="error-msg">{error}</div>}
-
-      {/* Search Form */}
-      <form className="search-form" onSubmit={handleSearch}>
-        <div className="search-input-row">
-          <input
-            type="text"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Ask a question about your blog content..."
-          />
-          <select value={detailLevel} onChange={(e) => setDetailLevel(e.target.value)}>
-            <option value="brief">Brief</option>
-            <option value="normal">Normal</option>
-            <option value="detailed">Detailed</option>
-          </select>
-          <button type="submit" className="btn btn-primary" disabled={searching}>
-            <FiSearch /> {searching ? 'Searching...' : 'Search'}
-          </button>
-        </div>
-      </form>
-
-      {isAdmin && (
-        <div className="admin-search-actions admin-search-actions-inline">
-          <button type="button" className="btn btn-secondary btn-sm" onClick={handleIndex} disabled={indexing}>
-            <FiRefreshCw className={indexing ? 'spin' : ''} />
-            {indexing ? 'Indexing...' : 'Re-index'}
-          </button>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={handleViewChunks}>
-            <FiDatabase /> {showChunks ? 'Hide Chunks' : 'View Chunks'}
-          </button>
-        </div>
-      )}
 
       {/* Chat */}
       {chat.length > 0 && (
@@ -245,18 +242,26 @@ export default function SearchPage() {
                 </div>
 
                 {turn.sources.length > 0 && (
-                  <div className="sources-section">
-                    <h3>Sources ({turn.sources.length})</h3>
-                    {turn.sources.map((src, i) => (
-                      <div key={i} className="source-card">
-                        <div className="source-title">{src.title}</div>
-                        <div className="source-meta">
-                          By {src.author} &middot; {src.organization}
-                          {src.created_at && <> &middot; {new Date(src.created_at).toLocaleDateString()}</>}
-                        </div>
-                        <div className="source-chunk">{src.chunk_text}</div>
+                  <div className="sources-toggle-block">
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => toggleSources(turn.id)}>
+                      <FiDatabase /> {expandedSources[turn.id] ? 'Hide Sources' : `Show Sources (${turn.sources.length})`}
+                    </button>
+
+                    {expandedSources[turn.id] && (
+                      <div className="sources-section">
+                        <h3>Sources ({turn.sources.length})</h3>
+                        {turn.sources.map((src, i) => (
+                          <div key={i} className="source-card">
+                            <div className="source-title">{src.title}</div>
+                            <div className="source-meta">
+                              By {src.author} &middot; {src.organization}
+                              {src.created_at && <> &middot; {new Date(src.created_at).toLocaleDateString()}</>}
+                            </div>
+                            <div className="source-chunk">{src.chunk_text}</div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>
