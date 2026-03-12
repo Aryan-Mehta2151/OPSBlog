@@ -60,7 +60,10 @@ def create_blog(
     
     # Index for search if published
     if blog.status == "published":
-        vector_service.index_single_blog(blog.id, db)
+        try:
+            vector_service.index_single_blog(blog.id, db)
+        except Exception as e:
+            print(f"Blog updated but reindex failed for {blog.id}: {e}")
     
     return blog
 

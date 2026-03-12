@@ -40,7 +40,14 @@ def _create_embeddings():
     - 'openai' uses OpenAI text-embedding-3-large (for production/cloud)
     - 'ollama' (default) uses local Ollama nomic-embed-text
     """
-    provider = os.getenv("EMBEDDING_PROVIDER", "ollama").lower()
+    provider = os.getenv("EMBEDDING_PROVIDER")
+    if provider:
+        provider = provider.lower()
+    else:
+        # In Render/production prefer OpenAI automatically, since Ollama is not available there.
+        is_render = os.getenv("RENDER") == "true" or bool(os.getenv("RENDER_EXTERNAL_URL"))
+        provider = "openai" if is_render and os.getenv("OPENAI_API_KEY") else "ollama"
+
     if provider == "openai":
         from langchain_openai import OpenAIEmbeddings  # type: ignore
         api_key = os.getenv("OPENAI_API_KEY")
