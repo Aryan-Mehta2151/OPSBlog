@@ -45,8 +45,8 @@ COPY <<'EOF' /app/start.sh
 set -e
 echo "Running database migrations..."
 alembic upgrade head
-echo "Starting server..."
-exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+echo "Starting server on port ${PORT:-8000}..."
+exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --log-level info 2>&1
 EOF
 RUN chmod +x /app/start.sh
 

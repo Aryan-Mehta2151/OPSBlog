@@ -46,9 +46,14 @@ class VectorService:
     def __init__(self):
         # Initialize ChromaDB client
         chroma_path = os.getenv("CHROMA_DB_PATH", "./chroma_db")
+        print(f"Initializing ChromaDB at {chroma_path}")
         self.client = chromadb.PersistentClient(path=chroma_path)
-        # Always get fresh collection reference
-        self.collection = self.client.get_or_create_collection(name="blog_posts")
+        # Always get fresh collection reference — pass embedding_function=None
+        # to prevent chromadb from loading its heavy default SentenceTransformer model
+        self.collection = self.client.get_or_create_collection(
+            name="blog_posts",
+            embedding_function=None,
+        )
 
         # Initialize embeddings (configurable provider)
         try:
@@ -129,7 +134,7 @@ class VectorService:
             return
 
         # Get fresh collection reference
-        collection = self.client.get_collection(name="blog_posts")
+        collection = self.client.get_collection(name="blog_posts", embedding_function=None)
 
         try:
             # Prepare data for ChromaDB
@@ -160,7 +165,7 @@ class VectorService:
         """Get all chunks from the vector database, optionally scoped to an organization"""
         try:
             # Get fresh collection reference
-            collection = self.client.get_collection(name="blog_posts")
+            collection = self.client.get_collection(name="blog_posts", embedding_function=None)
             get_args = {"include": ['documents', 'metadatas']}
             if org_id:
                 get_args["where"] = {"org_id": org_id}
@@ -207,7 +212,7 @@ class VectorService:
 
             # Remove old chunks for this blog (important for updates!)
             try:
-                collection = self.client.get_collection(name="blog_posts")
+                collection = self.client.get_collection(name="blog_posts", embedding_function=None)
                 collection.delete(where={"blog_id": blog_id})
                 print(f"Deleted old chunks for blog {blog_id}")
             except Exception as e:
@@ -430,7 +435,7 @@ class VectorService:
     def search_similar_chunks(self, query: str, n_results: int = 5, org_id: str = None) -> Dict[str, Any]:
         """Search for similar chunks based on query, scoped to an organization"""
         # Get fresh collection reference to avoid stale references
-        collection = self.client.get_collection(name="blog_posts")
+        collection = self.client.get_collection(name="blog_posts", embedding_function=None)
         
         # Embed the query
         query_embedding = self.embeddings.embed_query(query)
@@ -505,12 +510,30 @@ Answer the question using ONLY the information from the provided content."""
     def delete_blog_chunks(self, blog_id: str):
         """Delete all chunks (blog text, PDFs, images) associated with a blog"""
         try:
-            collection = self.client.get_collection(name="blog_posts")
+            collection = self.client.get_collection(name="blog_posts", embedding_function=None)
             collection.delete(where={"blog_id": blog_id})
             print(f"Deleted all chunks for blog {blog_id}")
         except Exception as e:
             print(f"Error deleting chunks for blog {blog_id}: {e}")
 
 
-# Global instance
-vector_service = VectorService()
+# Lazy global instance — created on first access to avoid import-time crashes
+_vector_service_instance = None
+
+
+def _get_vector_service():
+    global _vector_service_instance
+    if _vector_service_instance is None:
+        print("Creating VectorService instance...")
+        _vector_service_instance = VectorService()
+        print("VectorService ready.")
+    return _vector_service_instance
+
+
+class _LazyVectorService:
+    """Proxy that defers VectorService creation until first attribute access."""
+    def __getattr__(self, name):
+        return getattr(_get_vector_service(), name)
+
+
+vector_service = _LazyVectorService()
