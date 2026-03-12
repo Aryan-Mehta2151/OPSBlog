@@ -8,6 +8,23 @@ from app.db.models import BlogPost, User, Organization, PdfDocument, ImageDocume
 from typing import List, Dict, Any
 import json
 import fitz
+
+
+def _get_env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
+OPENAI_IMAGE_VISION_MODEL = os.getenv("OPENAI_IMAGE_VISION_MODEL", "gpt-4o")
+OPENAI_PDF_VISION_MODEL = os.getenv("OPENAI_PDF_VISION_MODEL", "gpt-4o")
+PDF_VISION_MAX_PAGES = _get_env_int("PDF_VISION_MAX_PAGES", 25)
+PDF_VISION_MAX_IMAGES = _get_env_int("PDF_VISION_MAX_IMAGES", 30)
 try:
     import pytesseract
     from PIL import Image
@@ -20,7 +37,7 @@ except ImportError:
 
 def _create_embeddings():
     """Create embeddings based on EMBEDDING_PROVIDER env var.
-    - 'openai' uses OpenAI text-embedding-3-small (for production/cloud)
+    - 'openai' uses OpenAI text-embedding-3-large (for production/cloud)
     - 'ollama' (default) uses local Ollama nomic-embed-text
     """
     provider = os.getenv("EMBEDDING_PROVIDER", "ollama").lower()
@@ -28,10 +45,10 @@ def _create_embeddings():
         from langchain_openai import OpenAIEmbeddings  # type: ignore
         api_key = os.getenv("OPENAI_API_KEY")
         embeddings = OpenAIEmbeddings(
-            model="text-embedding-3-small",
+            model=OPENAI_EMBEDDING_MODEL,
             openai_api_key=api_key,
         )
-        print("OpenAI embeddings initialized (text-embedding-3-small)")
+        print(f"OpenAI embeddings initialized ({OPENAI_EMBEDDING_MODEL})")
         return embeddings
     else:
         from langchain_community.embeddings import OllamaEmbeddings  # type: ignore
@@ -275,8 +292,9 @@ class VectorService:
             text = ""
             for page in doc:
                 text += page.get_text()
+            extracted_parts = []
             if text.strip():
-                return text
+                extracted_parts.append(text)
 
             # Fallback for scanned/image-only PDFs
             if OCR_AVAILABLE:
@@ -293,12 +311,20 @@ class VectorService:
                         print(f"OCR failed for one PDF page in {file_path}: {page_err}")
 
                 if ocr_text.strip():
-                    return ocr_text
+                    extracted_parts.append(ocr_text)
 
-            # Last fallback: use vision OCR for image-only PDFs (common from mobile scanners)
+            # High-quality vision OCR pass for scanned/mobile PDFs
             vision_text = self._extract_text_from_pdf_with_vision(doc, file_path)
             if vision_text.strip():
-                return vision_text
+                extracted_parts.append(vision_text)
+
+            # Extract text/semantics from embedded images inside the PDF
+            pdf_image_text = self._extract_pdf_images_with_vision(doc, file_path)
+            if pdf_image_text.strip():
+                extracted_parts.append(pdf_image_text)
+
+            if extracted_parts:
+                return "\n\n".join(part for part in extracted_parts if part and part.strip())
 
             print(f"No text extracted from PDF (embedded + OCR): {file_path}")
             return ""
@@ -323,7 +349,7 @@ class VectorService:
 
             client = OpenAI(api_key=api_key)
             extracted_parts = []
-            max_pages = min(len(doc), 8)  # Keep cost/time bounded on large PDFs
+            max_pages = min(len(doc), PDF_VISION_MAX_PAGES)
 
             for page_idx in range(max_pages):
                 try:
@@ -332,14 +358,14 @@ class VectorService:
                     image_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
 
                     response = client.chat.completions.create(
-                        model="gpt-4o-mini",
+                        model=OPENAI_PDF_VISION_MODEL,
                         messages=[
                             {
                                 "role": "user",
                                 "content": [
                                     {
                                         "type": "text",
-                                        "text": "Extract all readable text from this PDF page. Return plain text only. If no text is visible, return an empty string."
+                                        "text": "Extract all readable text from this PDF page. Preserve key fields, names, headings, numbers and bullet points. Return plain text only."
                                     },
                                     {
                                         "type": "image_url",
@@ -364,6 +390,86 @@ class VectorService:
             return ""
         except Exception as e:
             print(f"Vision OCR fallback failed for PDF {file_path}: {e}")
+            return ""
+
+    def _extract_pdf_images_with_vision(self, doc, file_path: str) -> str:
+        """Extract semantic info and visible text from embedded PDF images."""
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return ""
+
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=api_key)
+            image_notes = []
+            processed_images = 0
+
+            for page_idx in range(len(doc)):
+                page = doc[page_idx]
+                page_images = page.get_images(full=True)
+
+                for img_idx, img in enumerate(page_images):
+                    if processed_images >= PDF_VISION_MAX_IMAGES:
+                        break
+
+                    try:
+                        xref = img[0]
+                        base_image = doc.extract_image(xref)
+                        image_bytes = base_image.get("image")
+                        if not image_bytes:
+                            continue
+
+                        image_ext = base_image.get("ext", "png").lower()
+                        mime_map = {
+                            "png": "image/png",
+                            "jpg": "image/jpeg",
+                            "jpeg": "image/jpeg",
+                            "webp": "image/webp",
+                            "gif": "image/gif",
+                        }
+                        mime_type = mime_map.get(image_ext, "image/png")
+                        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+                        response = client.chat.completions.create(
+                            model=OPENAI_PDF_VISION_MODEL,
+                            messages=[
+                                {
+                                    "role": "user",
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": "Describe this PDF-embedded image in detail and extract any visible text, labels, tables, values, names, and key entities. Return concise structured plain text."
+                                        },
+                                        {
+                                            "type": "image_url",
+                                            "image_url": {"url": f"data:{mime_type};base64,{image_b64}"}
+                                        },
+                                    ],
+                                }
+                            ],
+                            max_tokens=900,
+                        )
+
+                        image_text = (response.choices[0].message.content or "").strip()
+                        if image_text:
+                            image_notes.append(
+                                f"[PDF Image Page {page_idx + 1}, Image {img_idx + 1}]\n{image_text}"
+                            )
+                        processed_images += 1
+                    except Exception as image_err:
+                        print(f"Vision extraction failed for PDF image on page {page_idx + 1}: {image_err}")
+
+                if processed_images >= PDF_VISION_MAX_IMAGES:
+                    break
+
+            if image_notes:
+                print(f"Vision extracted content from {len(image_notes)} PDF images in {file_path}")
+                return "\n\n".join(image_notes)
+
+            return ""
+        except Exception as e:
+            print(f"PDF embedded-image vision extraction failed for {file_path}: {e}")
             return ""
 
     def index_pdf(self, pdf_doc: PdfDocument, db: Session):
@@ -415,7 +521,7 @@ class VectorService:
         print(f"Indexed PDF: {pdf_doc.filename}")
 
     def describe_image_with_vision(self, file_path: str) -> str:
-        """Use GPT-4 Vision to describe an image"""
+        """Use high-quality vision model to describe an image."""
         import base64
         from openai import OpenAI
 
@@ -435,17 +541,17 @@ class VectorService:
 
             client = OpenAI(api_key=api_key)
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=OPENAI_IMAGE_VISION_MODEL,
                 messages=[
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": "Describe this image in detail. Include what type of image it is (screenshot, photo, diagram, etc.), what it shows, any visible text, names, data, or key information."},
+                            {"type": "text", "text": "Describe this image in detail for retrieval. Extract all visible text exactly where possible, and summarize important entities, numbers, labels, tables, and relationships. Mention uncertain reads explicitly."},
                             {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_data}"}}
                         ]
                     }
                 ],
-                max_tokens=500
+                max_tokens=1200
             )
             description = response.choices[0].message.content
             print(f"Vision description generated: {len(description)} characters")
