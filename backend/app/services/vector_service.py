@@ -308,6 +308,7 @@ class VectorService:
                 "text": chunk,
                 "metadata": {
                     "type": "pdf",
+                    "blog_id": pdf_doc.blog_id,
                     "filename": pdf_doc.filename,
                     "title": blog.title,
                     "author_email": author.email if author else "Unknown",
@@ -410,6 +411,7 @@ class VectorService:
                 "text": chunk,
                 "metadata": {
                     "type": "image",
+                    "blog_id": image_doc.blog_id,
                     "filename": image_doc.filename,
                     "title": blog.title,
                     "author_email": author.email if author else "Unknown",
