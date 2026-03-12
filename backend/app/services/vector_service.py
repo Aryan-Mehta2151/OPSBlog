@@ -479,24 +479,26 @@ class VectorService:
         }
         detail_instruction = detail_instructions.get(detail_level, detail_instructions["normal"])
 
-        prompt = f"""You are a helpful assistant that answers questions based on the provided blog content.
+        system_msg = """You are a friendly AI assistant for a blog platform called OpsBlog.
 
-RESPONSE STYLE: {detail_instruction}
+RULES:
+1. If the user sends a greeting (hi, hello, hey, etc.) or casual message, respond conversationally. Say hello and offer to help them search their blog content. Do NOT dump blog content for greetings.
+2. If the user asks a real question, answer it using ONLY the provided blog content.
+3. If the content includes "Extracted Text" from images, that is OCR text. If it includes "Image Description", use it to understand the image.
+4. If you cannot find relevant information in the content, say so honestly."""
 
-QUESTION: {query}
+        prompt = f"""RESPONSE STYLE: {detail_instruction}
 
-CONTENT TO ANALYZE:
-{context}
+USER MESSAGE: {query}
 
-IMPORTANT: If the content includes "Extracted Text" from images, this contains text that was read from images using OCR. If it includes "Image Description", use that to understand what the image shows. Use all available information to answer the question.
-
-Answer the question using ONLY the information from the provided content."""
+BLOG CONTENT (use only if the user asks a real question):
+{context}"""
 
         try:
             response = client.chat.completions.create(
-                model="gpt-4o",  # Most capable model
+                model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": "You are a helpful assistant that answers questions based on provided blog content."},
+                    {"role": "system", "content": system_msg},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=max_tokens,
@@ -526,24 +528,26 @@ Answer the question using ONLY the information from the provided content."""
         }
         detail_instruction = detail_instructions.get(detail_level, detail_instructions["normal"])
 
-        prompt = f"""You are a helpful assistant that answers questions based on the provided blog content.
+        system_msg = """You are a friendly AI assistant for a blog platform called OpsBlog.
 
-RESPONSE STYLE: {detail_instruction}
+RULES:
+1. If the user sends a greeting (hi, hello, hey, etc.) or casual message, respond conversationally. Say hello and offer to help them search their blog content. Do NOT dump blog content for greetings.
+2. If the user asks a real question, answer it using ONLY the provided blog content.
+3. If the content includes "Extracted Text" from images, that is OCR text. If it includes "Image Description", use it to understand the image.
+4. If you cannot find relevant information in the content, say so honestly."""
 
-QUESTION: {query}
+        prompt = f"""RESPONSE STYLE: {detail_instruction}
 
-CONTENT TO ANALYZE:
-{context}
+USER MESSAGE: {query}
 
-IMPORTANT: If the content includes "Extracted Text" from images, this contains text that was read from images using OCR. If it includes "Image Description", use that to understand what the image shows. Use all available information to answer the question.
-
-Answer the question using ONLY the information from the provided content."""
+BLOG CONTENT (use only if the user asks a real question):
+{context}"""
 
         try:
             stream = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": "You are a helpful assistant that answers questions based on provided blog content."},
+                    {"role": "system", "content": system_msg},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=max_tokens,
