@@ -37,6 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(null);
       setUser(null);
       localStorage.removeItem('token');
+      localStorage.removeItem('refresh_token');
     } finally {
       setLoading(false);
     }

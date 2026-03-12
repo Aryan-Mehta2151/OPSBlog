@@ -33,6 +33,36 @@
   gap: 0.5rem;
 }
 
+.admin-search-actions-inline {
+  margin-bottom: 1rem;
+}
+
+.search-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.search-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.search-question-card {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1rem 1.2rem;
+}
+
+.search-question-card h3 {
+  font-size: 0.9rem;
+  color: #6b7280;
+  margin-bottom: 0.35rem;
+}
+
 .success-msg {
   background: #f0fdf4;
   color: #16a34a;

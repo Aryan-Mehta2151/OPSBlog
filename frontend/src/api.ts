@@ -1,5 +1,14 @@
 import axios from 'axios';
 
+export function handleSessionExpired() {
+  localStorage.removeItem('token');
+  localStorage.removeItem('refresh_token');
+  alert('Your session has expired. Please log in again.');
+  if (window.location.pathname !== '/login') {
+    window.location.replace('/login');
+  }
+}
+
 // In dev: '/api' proxied by Vite to localhost:8000
 // In prod: '' (same origin, served by FastAPI)
 const api = axios.create({
@@ -29,10 +38,7 @@ api.interceptors.response.use(
 
       // No refresh token → session expired prompt
       if (!refreshToken) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('refresh_token');
-        alert('Your session has expired. Please log in again.');
-        window.location.href = '/login';
+        handleSessionExpired();
         return Promise.reject(error);
       }
 
@@ -69,10 +75,7 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch {
         // Refresh failed → session truly expired
-        localStorage.removeItem('token');
-        localStorage.removeItem('refresh_token');
-        alert('Your session has expired. Please log in again.');
-        window.location.href = '/login';
+        handleSessionExpired();
         return Promise.reject(error);
       } finally {
         isRefreshing = false;

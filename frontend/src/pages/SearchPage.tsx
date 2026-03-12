@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { searchApi } from '../api';
+import { useEffect, useRef, useState } from 'react';
+import { handleSessionExpired, searchApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { FiSearch, FiRefreshCw, FiDatabase } from 'react-icons/fi';
 import './Search.css';
@@ -12,13 +12,20 @@ interface Source {
   chunk_text: string;
 }
 
+interface ChatTurn {
+  id: string;
+  question: string;
+  answer: string;
+  sources: Source[];
+}
+
 export default function SearchPage() {
   const { isAdmin } = useAuth();
 
   const [question, setQuestion] = useState('');
   const [detailLevel, setDetailLevel] = useState('normal');
-  const [answer, setAnswer] = useState('');
-  const [sources, setSources] = useState<Source[]>([]);
+  const [chat, setChat] = useState<ChatTurn[]>([]);
+  const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState('');
 
@@ -27,83 +34,117 @@ export default function SearchPage() {
   const [indexMsg, setIndexMsg] = useState('');
   const [chunks, setChunks] = useState<any[]>([]);
   const [showChunks, setShowChunks] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chat, searching]);
+
+  const updateTurn = (turnId: string, updater: (turn: ChatTurn) => ChatTurn) => {
+    setChat((prev) => prev.map((turn) => (turn.id === turnId ? updater(turn) : turn)));
+  };
+
+  const refreshAccessToken = async (base: string): Promise<string | null> => {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (!refreshToken) return null;
+
+    try {
+      const refreshRes = await fetch(`${base}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (!refreshRes.ok) return null;
+
+      const data = await refreshRes.json();
+      localStorage.setItem('token', data.access_token);
+      localStorage.setItem('refresh_token', data.refresh_token);
+      return data.access_token;
+    } catch {
+      return null;
+    }
+  };
+
+  const streamSearch = async (query: string, turnId: string, token: string | null, hasRetried = false): Promise<void> => {
+    const base = import.meta.env.VITE_API_BASE_URL ?? '/api';
+    const res = await fetch(`${base}/search/query/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ question: query, detail_level: detailLevel }),
+    });
+
+    if (!res.ok) {
+      if (res.status === 401 && !hasRetried) {
+        const newToken = await refreshAccessToken(base);
+        if (newToken) {
+          return streamSearch(query, turnId, newToken, true);
+        }
+        handleSessionExpired();
+        return;
+      }
+
+      const errData = await res.json().catch(() => null);
+      throw new Error(errData?.detail || `HTTP ${res.status}`);
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error('No stream received from server');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6);
+        if (payload === '[DONE]') continue;
+
+        try {
+          const msg = JSON.parse(payload);
+          if (msg.type === 'answer') {
+            updateTurn(turnId, (turn) => ({ ...turn, answer: turn.answer + msg.content }));
+          } else if (msg.type === 'sources') {
+            updateTurn(turnId, (turn) => ({ ...turn, sources: msg.sources || [] }));
+          }
+        } catch {
+          // Ignore non-JSON SSE messages
+        }
+      }
+    }
+  };
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!question.trim()) return;
+    const query = question.trim();
+    if (!query) return;
+
+    const turnId = `${Date.now()}`;
+    setChat((prev) => [...prev, { id: turnId, question: query, answer: '', sources: [] }]);
+    setActiveTurnId(turnId);
     setSearching(true);
     setError('');
-    setAnswer('');
-    setSources([]);
+    setQuestion('');
+
     try {
       const token = localStorage.getItem('token');
-      const base = import.meta.env.VITE_API_BASE_URL ?? '/api';
-      const res = await fetch(`${base}/search/query/stream`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ question, detail_level: detailLevel }),
-      });
-      if (!res.ok) {
-        // If 401, try refreshing token
-        if (res.status === 401) {
-          const refreshToken = localStorage.getItem('refresh_token');
-          if (refreshToken) {
-            try {
-              const refreshRes = await fetch(`${base}/auth/refresh`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: refreshToken }),
-              });
-              if (refreshRes.ok) {
-                const data = await refreshRes.json();
-                localStorage.setItem('token', data.access_token);
-                localStorage.setItem('refresh_token', data.refresh_token);
-                // Retry the search with new token
-                setSearching(false);
-                handleSearch(e);
-                return;
-              }
-            } catch {}
-          }
-          localStorage.removeItem('token');
-          localStorage.removeItem('refresh_token');
-          alert('Your session has expired. Please log in again.');
-          window.location.href = '/login';
-          return;
-        }
-        const errData = await res.json().catch(() => null);
-        throw new Error(errData?.detail || `HTTP ${res.status}`);
-      }
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const payload = line.slice(6);
-          if (payload === '[DONE]') break;
-          try {
-            const msg = JSON.parse(payload);
-            if (msg.type === 'answer') {
-              setAnswer((prev) => prev + msg.content);
-            } else if (msg.type === 'sources') {
-              setSources(msg.sources);
-            }
-          } catch {}
-        }
-      }
+      await streamSearch(query, turnId, token);
     } catch (err: any) {
       setError(err.message || 'Search failed');
     } finally {
       setSearching(false);
+      setActiveTurnId(null);
     }
   };
 
@@ -140,11 +181,11 @@ export default function SearchPage() {
         <h1>AI Search</h1>
         {isAdmin && (
           <div className="admin-search-actions">
-            <button className="btn btn-secondary btn-sm" onClick={handleIndex} disabled={indexing}>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={handleIndex} disabled={indexing}>
               <FiRefreshCw className={indexing ? 'spin' : ''} />
               {indexing ? 'Indexing...' : 'Re-index'}
             </button>
-            <button className="btn btn-secondary btn-sm" onClick={handleViewChunks}>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={handleViewChunks}>
               <FiDatabase /> {showChunks ? 'Hide Chunks' : 'View Chunks'}
             </button>
           </div>
@@ -174,30 +215,54 @@ export default function SearchPage() {
         </div>
       </form>
 
-      {/* Answer */}
-      {(answer || searching) && (
-        <div className="search-answer">
-          <h2>Answer</h2>
-          <div className="answer-text">
-            {answer}
-            {searching && <span className="cursor-blink">|</span>}
-          </div>
+      {isAdmin && (
+        <div className="admin-search-actions admin-search-actions-inline">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={handleIndex} disabled={indexing}>
+            <FiRefreshCw className={indexing ? 'spin' : ''} />
+            {indexing ? 'Indexing...' : 'Re-index'}
+          </button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={handleViewChunks}>
+            <FiDatabase /> {showChunks ? 'Hide Chunks' : 'View Chunks'}
+          </button>
+        </div>
+      )}
 
-          {sources.length > 0 && (
-            <div className="sources-section">
-              <h3>Sources ({sources.length})</h3>
-              {sources.map((src, i) => (
-                <div key={i} className="source-card">
-                  <div className="source-title">{src.title}</div>
-                  <div className="source-meta">
-                    By {src.author} &middot; {src.organization}
-                    {src.created_at && <> &middot; {new Date(src.created_at).toLocaleDateString()}</>}
-                  </div>
-                  <div className="source-chunk">{src.chunk_text}</div>
+      {/* Chat */}
+      {chat.length > 0 && (
+        <div className="search-chat">
+          {chat.map((turn) => (
+            <div key={turn.id} className="search-turn">
+              <div className="search-question-card">
+                <h3>You asked</h3>
+                <div className="answer-text">{turn.question}</div>
+              </div>
+
+              <div className="search-answer">
+                <h2>Answer</h2>
+                <div className="answer-text">
+                  {turn.answer}
+                  {searching && activeTurnId === turn.id && <span className="cursor-blink">|</span>}
                 </div>
-              ))}
+
+                {turn.sources.length > 0 && (
+                  <div className="sources-section">
+                    <h3>Sources ({turn.sources.length})</h3>
+                    {turn.sources.map((src, i) => (
+                      <div key={i} className="source-card">
+                        <div className="source-title">{src.title}</div>
+                        <div className="source-meta">
+                          By {src.author} &middot; {src.organization}
+                          {src.created_at && <> &middot; {new Date(src.created_at).toLocaleDateString()}</>}
+                        </div>
+                        <div className="source-chunk">{src.chunk_text}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
+          ))}
+          <div ref={chatEndRef} />
         </div>
       )}
 
