@@ -17,7 +17,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (token: string) => Promise<void>;
+  login: (token: string, refreshToken?: string) => Promise<void>;
   logout: () => void;
   isAdmin: boolean;
 }
@@ -50,14 +50,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [token]);
 
-  const login = async (newToken: string) => {
+  const login = async (newToken: string, refreshToken?: string) => {
     localStorage.setItem('token', newToken);
+    if (refreshToken) localStorage.setItem('refresh_token', refreshToken);
     setToken(newToken);
     // fetchUser will be triggered by the token state change
   };
 
   const logout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('refresh_token');
     setToken(null);
     setUser(null);
   };

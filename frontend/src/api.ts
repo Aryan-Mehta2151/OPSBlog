@@ -14,13 +14,69 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Track if we're already refreshing to avoid infinite loops
+let isRefreshing = false;
+let refreshQueue: Array<(token: string) => void> = [];
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
+  async (error) => {
+    const originalRequest = error.config;
+
+    // If 401 and we haven't already tried to refresh for this request
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      const refreshToken = localStorage.getItem('refresh_token');
+
+      // No refresh token → go to login
+      if (!refreshToken) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('refresh_token');
+        window.location.href = '/login';
+        return Promise.reject(error);
+      }
+
+      // If already refreshing, queue this request
+      if (isRefreshing) {
+        return new Promise((resolve) => {
+          refreshQueue.push((newToken: string) => {
+            originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            resolve(api(originalRequest));
+          });
+        });
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        const res = await axios.post(
+          `${import.meta.env.VITE_API_BASE_URL ?? '/api'}/auth/refresh`,
+          { refresh_token: refreshToken }
+        );
+        const newAccess = res.data.access_token;
+        const newRefresh = res.data.refresh_token;
+
+        localStorage.setItem('token', newAccess);
+        localStorage.setItem('refresh_token', newRefresh);
+
+        // Retry all queued requests
+        refreshQueue.forEach((cb) => cb(newAccess));
+        refreshQueue = [];
+
+        // Retry the original request
+        originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+        return api(originalRequest);
+      } catch {
+        // Refresh failed → session truly expired, go to login
+        localStorage.removeItem('token');
+        localStorage.removeItem('refresh_token');
+        window.location.href = '/login';
+        return Promise.reject(error);
+      } finally {
+        isRefreshing = false;
+      }
     }
+
     return Promise.reject(error);
   }
 );

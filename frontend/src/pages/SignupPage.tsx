@@ -21,7 +21,7 @@ export default function SignupPage() {
     setLoading(true);
     try {
       const res = await authApi.signup({ email, password, organization });
-      await login(res.data.access_token);
+      await login(res.data.access_token, res.data.refresh_token);
       navigate('/');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Signup failed');

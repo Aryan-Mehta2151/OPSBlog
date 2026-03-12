@@ -21,7 +21,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await authApi.login({ email, password, organization });
-      await login(res.data.access_token);
+      await login(res.data.access_token, res.data.refresh_token);
       navigate('/');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Login failed');

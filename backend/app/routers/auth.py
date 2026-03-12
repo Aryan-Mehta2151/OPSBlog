@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from app.core.deps import get_db, get_current_user
-from app.core.security import hash_password, verify_password, create_access_token
+from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token, decode_refresh_token
 from app.db.models import User, Organization, Membership
-from app.schemas.auth import SignupRequest, LoginRequest, TokenResponse, UserWithOrgResponse
+from app.schemas.auth import SignupRequest, LoginRequest, TokenResponse, RefreshRequest, UserWithOrgResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -45,7 +45,8 @@ def signup(data: SignupRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="User already belongs to this organization")
 
     token = create_access_token(user.id)
-    return TokenResponse(access_token=token)
+    refresh = create_refresh_token(user.id)
+    return TokenResponse(access_token=token, refresh_token=refresh)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -72,7 +73,25 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this organization")
 
     token = create_access_token(user.id)
-    return TokenResponse(access_token=token)
+    refresh = create_refresh_token(user.id)
+    return TokenResponse(access_token=token, refresh_token=refresh)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_tokens(data: RefreshRequest, db: Session = Depends(get_db)):
+    """Exchange a valid refresh token for new access + refresh tokens"""
+    try:
+        user_id = decode_refresh_token(data.refresh_token)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    new_access = create_access_token(user.id)
+    new_refresh = create_refresh_token(user.id)
+    return TokenResponse(access_token=new_access, refresh_token=new_refresh)
 
 
 @router.get("/me", response_model=UserWithOrgResponse)
