@@ -165,21 +165,23 @@ def delete_blog(
             detail="Only the author can delete this blog"
         )
     
-    # Delete associated files from disk
+    # Delete associated files from disk and their DB rows
     pdfs = db.query(PdfDocument).filter(PdfDocument.blog_id == blog_id).all()
     for pdf in pdfs:
         if os.path.exists(pdf.file_path):
             os.remove(pdf.file_path)
+        db.delete(pdf)
     
     images = db.query(ImageDocument).filter(ImageDocument.blog_id == blog_id).all()
     for image in images:
         if os.path.exists(image.file_path):
             os.remove(image.file_path)
+        db.delete(image)
     
     # Delete vector chunks from ChromaDB
     vector_service.delete_blog_chunks(blog_id)
     
-    # Delete blog (cascades to pdf_documents and image_documents rows)
+    # Delete blog
     db.delete(blog)
     db.commit()
     
