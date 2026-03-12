@@ -58,9 +58,13 @@ def upload_image(
     # Verify permissions
     verify_author_or_admin(current_user, blog, db)
 
-    # Validate file type (allow common image formats)
+    # Validate file type — check extension first, fall back to MIME type
+    # (mobile browsers may send images without proper extensions)
     allowed_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
-    if not any(file.filename.lower().endswith(ext) for ext in allowed_extensions):
+    allowed_mimes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp']
+    is_img_extension = file.filename and any(file.filename.lower().endswith(ext) for ext in allowed_extensions)
+    is_img_mime = file.content_type in allowed_mimes
+    if not is_img_extension and not is_img_mime:
         raise HTTPException(status_code=400, detail="Only image files are allowed (jpg, jpeg, png, gif, bmp, webp)")
 
     # Validate file size (max 5MB)

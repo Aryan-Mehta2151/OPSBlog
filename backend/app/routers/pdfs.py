@@ -59,9 +59,17 @@ def upload_pdf(
     # Verify permissions
     verify_author_or_admin(current_user, blog, db)
 
-    # Validate file type
-    if not file.filename.lower().endswith('.pdf'):
+    # Validate file type — check extension first, fall back to MIME type
+    # (mobile browsers often send PDFs without a .pdf extension)
+    is_pdf_extension = file.filename and file.filename.lower().endswith('.pdf')
+    is_pdf_mime = file.content_type in ("application/pdf", "application/x-pdf")
+    if not is_pdf_extension and not is_pdf_mime:
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+
+    # Normalise filename so it always ends with .pdf (for storage & later text extraction)
+    original_filename = file.filename or "document"
+    if not original_filename.lower().endswith('.pdf'):
+        original_filename = original_filename + ".pdf"
 
     # Validate file size (max 10MB)
     content = file.file.read()
@@ -74,7 +82,7 @@ def upload_pdf(
     os.makedirs(upload_dir, exist_ok=True)
 
     # Save file
-    file_path = f"{upload_dir}/{blog_id}_{file.filename}"
+    file_path = f"{upload_dir}/{blog_id}_{original_filename}"
     with open(file_path, "wb") as f:
         f.write(content)
 
@@ -93,7 +101,7 @@ def upload_pdf(
     # Create database record
     pdf_doc = PdfDocument(
         blog_id=blog_id,
-        filename=file.filename,
+        filename=original_filename,
         file_path=file_path
     )
     db.add(pdf_doc)
