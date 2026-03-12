@@ -224,55 +224,8 @@ export default function SearchPage() {
         {error && <div className="error-msg">{error}</div>}
       </div>
 
-      {/* Chat */}
-      {chat.length > 0 && (
-        <div className="search-chat">
-          {chat.map((turn) => (
-            <div key={turn.id} className="search-turn">
-              <div className="search-question-card">
-                <h3>You asked</h3>
-                <div className="answer-text">{turn.question}</div>
-              </div>
-
-              <div className="search-answer">
-                <h2>Answer</h2>
-                <div className="answer-text">
-                  {turn.answer}
-                  {searching && activeTurnId === turn.id && <span className="cursor-blink">|</span>}
-                </div>
-
-                {turn.sources.length > 0 && (
-                  <div className="sources-toggle-block">
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => toggleSources(turn.id)}>
-                      <FiDatabase /> {expandedSources[turn.id] ? 'Hide Sources' : `Show Sources (${turn.sources.length})`}
-                    </button>
-
-                    {expandedSources[turn.id] && (
-                      <div className="sources-section">
-                        <h3>Sources ({turn.sources.length})</h3>
-                        {turn.sources.map((src, i) => (
-                          <div key={i} className="source-card">
-                            <div className="source-title">{src.title}</div>
-                            <div className="source-meta">
-                              By {src.author} &middot; {src.organization}
-                              {src.created_at && <> &middot; {new Date(src.created_at).toLocaleDateString()}</>}
-                            </div>
-                            <div className="source-chunk">{src.chunk_text}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-          <div ref={chatEndRef} />
-        </div>
-      )}
-
       {/* Chunks (admin) */}
-      {showChunks && (
+      {showChunks ? (
         <div className="chunks-section">
           <h2>Indexed Chunks ({chunks.length})</h2>
           <div className="chunks-list">
@@ -287,6 +240,52 @@ export default function SearchPage() {
             ))}
           </div>
         </div>
+      ) : (
+        chat.length > 0 && (
+          <div className="search-chat">
+            {chat.map((turn) => (
+              <div key={turn.id} className="search-turn">
+                <div className="search-question-card">
+                  <h3>You asked</h3>
+                  <div className="answer-text">{turn.question}</div>
+                </div>
+
+                <div className="search-answer">
+                  <h2>Answer</h2>
+                  <div className="answer-text">
+                    {turn.answer}
+                    {searching && activeTurnId === turn.id && <span className="cursor-blink">|</span>}
+                  </div>
+
+                  {turn.sources.length > 0 && (
+                    <div className="sources-toggle-block">
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => toggleSources(turn.id)}>
+                        <FiDatabase /> {expandedSources[turn.id] ? 'Hide Sources' : `Show Sources (${turn.sources.length})`}
+                      </button>
+
+                      {expandedSources[turn.id] && (
+                        <div className="sources-section">
+                          <h3>Sources ({turn.sources.length})</h3>
+                          {turn.sources.map((src, i) => (
+                            <div key={i} className="source-card">
+                              <div className="source-title">{src.title}</div>
+                              <div className="source-meta">
+                                By {src.author} &middot; {src.organization}
+                                {src.created_at && <> &middot; {new Date(src.created_at).toLocaleDateString()}</>}
+                              </div>
+                              <div className="source-chunk">{src.chunk_text}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            <div ref={chatEndRef} />
+          </div>
+        )
       )}
     </div>
   );
