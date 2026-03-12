@@ -1,4 +1,6 @@
 import os
+from io import BytesIO
+import base64
 import chromadb
 from langchain_text_splitters import RecursiveCharacterTextSplitter  # type: ignore
 from sqlalchemy.orm import Session
@@ -265,15 +267,103 @@ class VectorService:
 
     def extract_text_from_pdf(self, file_path: str) -> str:
         """Extract text from a PDF file"""
+        doc = None
         try:
             doc = fitz.open(file_path)
+
+            # First pass: embedded/selectable text
             text = ""
             for page in doc:
                 text += page.get_text()
-            doc.close()
-            return text
+            if text.strip():
+                return text
+
+            # Fallback for scanned/image-only PDFs
+            if OCR_AVAILABLE:
+                print(f"No embedded text in PDF {file_path}; trying OCR fallback")
+                ocr_text = ""
+                for page in doc:
+                    try:
+                        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+                        image = Image.open(BytesIO(pix.tobytes("png"))).convert("RGB")
+                        page_text = pytesseract.image_to_string(image)
+                        if page_text.strip():
+                            ocr_text += page_text + "\n"
+                    except Exception as page_err:
+                        print(f"OCR failed for one PDF page in {file_path}: {page_err}")
+
+                if ocr_text.strip():
+                    return ocr_text
+
+            # Last fallback: use vision OCR for image-only PDFs (common from mobile scanners)
+            vision_text = self._extract_text_from_pdf_with_vision(doc, file_path)
+            if vision_text.strip():
+                return vision_text
+
+            print(f"No text extracted from PDF (embedded + OCR): {file_path}")
+            return ""
         except Exception as e:
             print(f"Error extracting text from PDF {file_path}: {e}")
+            return ""
+        finally:
+            if doc is not None:
+                try:
+                    doc.close()
+                except Exception:
+                    pass
+
+    def _extract_text_from_pdf_with_vision(self, doc, file_path: str) -> str:
+        """Use GPT-4o-mini vision OCR as a fallback for scanned/image-only PDFs."""
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return ""
+
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=api_key)
+            extracted_parts = []
+            max_pages = min(len(doc), 8)  # Keep cost/time bounded on large PDFs
+
+            for page_idx in range(max_pages):
+                try:
+                    page = doc[page_idx]
+                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+                    image_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+
+                    response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "Extract all readable text from this PDF page. Return plain text only. If no text is visible, return an empty string."
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {"url": f"data:image/png;base64,{image_b64}"}
+                                    },
+                                ],
+                            }
+                        ],
+                        max_tokens=1200,
+                    )
+
+                    page_text = (response.choices[0].message.content or "").strip()
+                    if page_text:
+                        extracted_parts.append(f"[Page {page_idx + 1}]\n{page_text}")
+                except Exception as page_err:
+                    print(f"Vision OCR failed for page {page_idx + 1} in {file_path}: {page_err}")
+
+            if extracted_parts:
+                print(f"Vision OCR extracted text from PDF: {file_path}")
+                return "\n\n".join(extracted_parts)
+
+            return ""
+        except Exception as e:
+            print(f"Vision OCR fallback failed for PDF {file_path}: {e}")
             return ""
 
     def index_pdf(self, pdf_doc: PdfDocument, db: Session):

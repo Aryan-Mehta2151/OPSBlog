@@ -59,20 +59,27 @@ def upload_pdf(
     # Verify permissions
     verify_author_or_admin(current_user, blog, db)
 
-    # Validate file type — check extension first, fall back to MIME type
-    # (mobile browsers often send PDFs without a .pdf extension)
-    is_pdf_extension = file.filename and file.filename.lower().endswith('.pdf')
-    is_pdf_mime = file.content_type in ("application/pdf", "application/x-pdf")
-    if not is_pdf_extension and not is_pdf_mime:
+    # Read content once (needed for size limit + file signature validation)
+    content = file.file.read()
+
+    # Validate file type — extension, MIME, or PDF file signature
+    # (mobile browsers may send generic names/mime like application/octet-stream)
+    is_pdf_extension = bool(file.filename and file.filename.lower().endswith('.pdf'))
+    is_pdf_mime = file.content_type in (
+        "application/pdf",
+        "application/x-pdf",
+        "application/octet-stream",
+    )
+    has_pdf_signature = content.lstrip().startswith(b"%PDF-")
+    if not is_pdf_extension and not is_pdf_mime and not has_pdf_signature:
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
     # Normalise filename so it always ends with .pdf (for storage & later text extraction)
-    original_filename = file.filename or "document"
+    original_filename = os.path.basename(file.filename) if file.filename else "document"
     if not original_filename.lower().endswith('.pdf'):
         original_filename = original_filename + ".pdf"
 
     # Validate file size (max 10MB)
-    content = file.file.read()
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="PDF file size exceeds 10MB limit")
 
