@@ -20,7 +20,7 @@ def _get_env_int(name: str, default: int) -> int:
         return default
 
 
-OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
+OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 OPENAI_IMAGE_VISION_MODEL = os.getenv("OPENAI_IMAGE_VISION_MODEL", "gpt-4o")
 OPENAI_PDF_VISION_MODEL = os.getenv("OPENAI_PDF_VISION_MODEL", "gpt-4o")
 PDF_VISION_MAX_PAGES = _get_env_int("PDF_VISION_MAX_PAGES", 25)
