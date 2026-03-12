@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.core.deps import get_db, get_current_user
-from app.db.models import User, Membership, PdfDocument, BlogPost
+from app.db.models import User, Membership, PdfDocument, ImageDocument, BlogPost
 from app.services.vector_service import vector_service
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -67,6 +67,16 @@ def index_blogs(
         )
         for pdf in pdfs:
             vector_service.index_pdf(pdf, db)
+        
+        # Also index images belonging to this org's blogs
+        images = (
+            db.query(ImageDocument)
+            .join(BlogPost, ImageDocument.blog_id == BlogPost.id)
+            .filter(BlogPost.org_id == membership.org_id)
+            .all()
+        )
+        for image in images:
+            vector_service.index_image(image, db)
         
         return {"message": "Blog posts, images, and PDFs indexed successfully"}
     except Exception as e:
