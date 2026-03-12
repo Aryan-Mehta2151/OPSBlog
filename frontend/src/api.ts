@@ -27,10 +27,11 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       const refreshToken = localStorage.getItem('refresh_token');
 
-      // No refresh token → go to login
+      // No refresh token → session expired prompt
       if (!refreshToken) {
         localStorage.removeItem('token');
         localStorage.removeItem('refresh_token');
+        alert('Your session has expired. Please log in again.');
         window.location.href = '/login';
         return Promise.reject(error);
       }
@@ -67,9 +68,10 @@ api.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${newAccess}`;
         return api(originalRequest);
       } catch {
-        // Refresh failed → session truly expired, go to login
+        // Refresh failed → session truly expired
         localStorage.removeItem('token');
         localStorage.removeItem('refresh_token');
+        alert('Your session has expired. Please log in again.');
         window.location.href = '/login';
         return Promise.reject(error);
       } finally {

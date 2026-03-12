@@ -47,6 +47,33 @@ export default function SearchPage() {
         body: JSON.stringify({ question, detail_level: detailLevel }),
       });
       if (!res.ok) {
+        // If 401, try refreshing token
+        if (res.status === 401) {
+          const refreshToken = localStorage.getItem('refresh_token');
+          if (refreshToken) {
+            try {
+              const refreshRes = await fetch(`${base}/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken }),
+              });
+              if (refreshRes.ok) {
+                const data = await refreshRes.json();
+                localStorage.setItem('token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                // Retry the search with new token
+                setSearching(false);
+                handleSearch(e);
+                return;
+              }
+            } catch {}
+          }
+          localStorage.removeItem('token');
+          localStorage.removeItem('refresh_token');
+          alert('Your session has expired. Please log in again.');
+          window.location.href = '/login';
+          return;
+        }
         const errData = await res.json().catch(() => null);
         throw new Error(errData?.detail || `HTTP ${res.status}`);
       }
