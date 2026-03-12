@@ -506,6 +506,56 @@ Answer the question using ONLY the information from the provided content."""
         except Exception as e:
             return f"Sorry, I couldn't generate an answer at this time. Error: {str(e)}"
 
+    def generate_answer_stream(self, query: str, context_chunks: List[str], max_tokens: int = 500, detail_level: str = "normal"):
+        """Stream an answer token-by-token using OpenAI's streaming API"""
+        import os
+        from openai import OpenAI
+
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            yield "OpenAI API key not configured."
+            return
+
+        client = OpenAI(api_key=api_key)
+        context = "\n\n".join(context_chunks)
+
+        detail_instructions = {
+            "brief": "Give a concise 2-3 sentence answer. Be direct and to the point.",
+            "normal": "Give a clear, well-structured answer with key details. Use a few paragraphs if needed.",
+            "detailed": "Give a comprehensive, in-depth answer covering all relevant information. Use paragraphs, bullet points, and examples where appropriate. Be thorough and detailed."
+        }
+        detail_instruction = detail_instructions.get(detail_level, detail_instructions["normal"])
+
+        prompt = f"""You are a helpful assistant that answers questions based on the provided blog content.
+
+RESPONSE STYLE: {detail_instruction}
+
+QUESTION: {query}
+
+CONTENT TO ANALYZE:
+{context}
+
+IMPORTANT: If the content includes "Extracted Text" from images, this contains text that was read from images using OCR. If it includes "Image Description", use that to understand what the image shows. Use all available information to answer the question.
+
+Answer the question using ONLY the information from the provided content."""
+
+        try:
+            stream = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant that answers questions based on provided blog content."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=max_tokens,
+                temperature=0.1,
+                stream=True,
+            )
+            for chunk in stream:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    yield delta.content
+        except Exception as e:
+            yield f"\nError: {str(e)}"
 
     def delete_blog_chunks(self, blog_id: str):
         """Delete all chunks (blog text, PDFs, images) associated with a blog"""

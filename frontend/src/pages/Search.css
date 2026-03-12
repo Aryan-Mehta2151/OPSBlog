@@ -63,6 +63,17 @@
   white-space: pre-wrap;
 }
 
+.cursor-blink {
+  display: inline;
+  animation: blink 0.7s step-end infinite;
+  color: #2563eb;
+  font-weight: bold;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
 .sources-section {
   margin-top: 1.5rem;
   padding-top: 1rem;

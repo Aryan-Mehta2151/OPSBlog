@@ -1,4 +1,6 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -135,6 +137,56 @@ def query_blogs(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to query blogs: {str(e)}"
         )
+
+
+@router.post("/query/stream")
+def query_blogs_stream(
+    data: QueryRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Stream query response token-by-token via SSE"""
+    membership = get_single_org_membership(current_user, db)
+
+    # Determine params based on detail level
+    if data.detail_level == "brief":
+        n_results, max_tokens = 3, 200
+    elif data.detail_level == "detailed":
+        n_results, max_tokens = 15, 1500
+    else:
+        n_results, max_tokens = 5, 500
+
+    results = vector_service.search_similar_chunks(data.question, n_results=n_results, org_id=membership.org_id)
+
+    if not results['documents'] or not results['documents'][0]:
+        def empty():
+            yield f"data: {json.dumps({'type': 'answer', 'content': 'I could not find any relevant information.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'sources', 'sources': []})}\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(empty(), media_type="text/event-stream")
+
+    context_chunks = [c for c in results['documents'][0] if c]
+    metadatas = results['metadatas'][0]
+
+    sources = []
+    for i, metadata in enumerate(metadatas):
+        sources.append({
+            "title": metadata.get("title", "Unknown"),
+            "author": metadata.get("author_email", "Unknown"),
+            "organization": metadata.get("org_name", "Unknown"),
+            "created_at": metadata.get("created_at"),
+            "chunk_text": context_chunks[i][:200] + "..." if len(context_chunks[i]) > 200 else context_chunks[i]
+        })
+
+    def event_stream():
+        # Stream the answer tokens
+        for token in vector_service.generate_answer_stream(data.question, context_chunks, max_tokens=max_tokens, detail_level=data.detail_level):
+            yield f"data: {json.dumps({'type': 'answer', 'content': token})}\n\n"
+        # Send sources after full answer
+        yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.get("/chunks", response_model=list[dict])

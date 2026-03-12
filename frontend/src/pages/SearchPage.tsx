@@ -36,11 +36,45 @@ export default function SearchPage() {
     setAnswer('');
     setSources([]);
     try {
-      const res = await searchApi.query(question, detailLevel);
-      setAnswer(res.data.answer);
-      setSources(res.data.sources);
+      const token = localStorage.getItem('token');
+      const base = import.meta.env.VITE_API_BASE_URL ?? '/api';
+      const res = await fetch(`${base}/search/query/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ question, detail_level: detailLevel }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.detail || `HTTP ${res.status}`);
+      }
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6);
+          if (payload === '[DONE]') break;
+          try {
+            const msg = JSON.parse(payload);
+            if (msg.type === 'answer') {
+              setAnswer((prev) => prev + msg.content);
+            } else if (msg.type === 'sources') {
+              setSources(msg.sources);
+            }
+          } catch {}
+        }
+      }
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Search failed');
+      setError(err.message || 'Search failed');
     } finally {
       setSearching(false);
     }
@@ -114,10 +148,13 @@ export default function SearchPage() {
       </form>
 
       {/* Answer */}
-      {answer && (
+      {(answer || searching) && (
         <div className="search-answer">
           <h2>Answer</h2>
-          <div className="answer-text">{answer}</div>
+          <div className="answer-text">
+            {answer}
+            {searching && <span className="cursor-blink">|</span>}
+          </div>
 
           {sources.length > 0 && (
             <div className="sources-section">
