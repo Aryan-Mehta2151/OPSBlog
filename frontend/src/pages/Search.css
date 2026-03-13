@@ -1,6 +1,96 @@
 .search-page {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 1.5rem;
   position: relative;
   margin-top: -2rem;
+}
+
+.search-sidebar {
+  position: sticky;
+  top: 76px;
+  height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 2rem;
+}
+
+.search-new-chat {
+  justify-content: center;
+}
+
+.search-conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.search-conversation-item {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.search-conversation-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.85rem 0.95rem;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.search-conversation-select:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-1px);
+}
+
+.search-conversation-item.active .search-conversation-select {
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-primary) 52%, var(--color-border));
+}
+
+.search-conversation-delete {
+  flex: 0 0 auto;
+  width: 42px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-faint);
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.search-conversation-delete:hover {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
+.search-conversation-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--color-text-strong);
+}
+
+.search-conversation-meta,
+.search-empty-state {
+  font-size: 0.78rem;
+  color: var(--color-text-faint);
+}
+
+.search-main {
+  min-width: 0;
 }
 
 .search-toolbar {
@@ -93,7 +183,9 @@
   font-size: 0.875rem;
 }
 
-.search-answer {
+.search-answer,
+.chunks-section,
+.search-placeholder {
   background: var(--color-surface);
   padding: 1.5rem;
   border-radius: 12px;
@@ -101,10 +193,18 @@
   margin-bottom: 1.5rem;
 }
 
-.search-answer h2 {
+.search-answer h2,
+.chunks-section h2,
+.search-placeholder h2 {
   font-size: 1.1rem;
   color: var(--color-text-strong);
   margin-bottom: 0.75rem;
+}
+
+.search-placeholder p {
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: 1.6;
 }
 
 .answer-text {
@@ -166,20 +266,6 @@
   line-height: 1.5;
 }
 
-/* Chunks */
-.chunks-section {
-  background: var(--color-surface);
-  padding: 1.5rem;
-  border-radius: 12px;
-  border: 1px solid var(--color-border);
-}
-
-.chunks-section h2 {
-  font-size: 1.1rem;
-  color: var(--color-text-strong);
-  margin-bottom: 1rem;
-}
-
 .chunks-list {
   display: flex;
   flex-direction: column;
@@ -218,6 +304,22 @@
 
 .spin {
   animation: spin 1s linear infinite;
+}
+
+@media (max-width: 1024px) {
+  .search-page {
+    grid-template-columns: 1fr;
+  }
+
+  .search-sidebar {
+    position: static;
+    height: auto;
+    padding-top: 2rem;
+  }
+
+  .search-conversation-list {
+    max-height: 240px;
+  }
 }
 
 @media (max-width: 768px) {

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { blogsApi, pdfsApi, imagesApi } from '../api';
 import { useAuth } from '../context/AuthContext';
-import { FiEdit, FiTrash2, FiUpload, FiFile, FiImage, FiSave, FiX } from 'react-icons/fi';
+import { FiEdit, FiTrash2, FiUpload, FiFile, FiImage, FiSave, FiX, FiEye, FiExternalLink } from 'react-icons/fi';
 import './BlogDetail.css';
 
 interface Blog {
@@ -50,6 +50,9 @@ export default function BlogDetailPage() {
 
   // Upload state
   const [uploading, setUploading] = useState('');
+  const [viewingPdfId, setViewingPdfId] = useState<string | null>(null);
+  const [viewingImageId, setViewingImageId] = useState<string | null>(null);
+  const [imagePreview, setImagePreview] = useState<{ name: string; url: string } | null>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
 
@@ -75,6 +78,14 @@ export default function BlogDetailPage() {
   useEffect(() => {
     fetchBlog();
   }, [blogId]);
+
+  useEffect(() => {
+    return () => {
+      if (imagePreview?.url) {
+        URL.revokeObjectURL(imagePreview.url);
+      }
+    };
+  }, [imagePreview]);
 
   const startEdit = () => {
     if (!blog) return;
@@ -163,6 +174,62 @@ export default function BlogDetailPage() {
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to delete image');
     }
+  };
+
+  const handleViewPdf = async (pdf: PdfDoc) => {
+    const previewWindow = window.open('', '_blank');
+    if (previewWindow) {
+      previewWindow.document.title = pdf.filename;
+      previewWindow.document.body.innerHTML = '<div style="font-family: sans-serif; padding: 24px; color: #0f172a;">Loading PDF...</div>';
+    }
+
+    try {
+      setViewingPdfId(pdf.id);
+      setError('');
+      const res = await pdfsApi.view(blogId!, pdf.id);
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      if (previewWindow) {
+        previewWindow.location.href = url;
+      } else {
+        window.location.href = url;
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err: any) {
+      if (previewWindow) {
+        previewWindow.close();
+      }
+      setError(err.response?.data?.detail || 'Failed to open PDF');
+    } finally {
+      setViewingPdfId(null);
+    }
+  };
+
+  const handleViewImage = async (image: ImageDoc) => {
+    try {
+      setViewingImageId(image.id);
+      setError('');
+      const res = await imagesApi.view(blogId!, image.id);
+      const nextUrl = URL.createObjectURL(res.data);
+      setImagePreview((prev) => {
+        if (prev?.url) {
+          URL.revokeObjectURL(prev.url);
+        }
+        return { name: image.filename, url: nextUrl };
+      });
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to open image');
+    } finally {
+      setViewingImageId(null);
+    }
+  };
+
+  const closeImagePreview = () => {
+    setImagePreview((prev) => {
+      if (prev?.url) {
+        URL.revokeObjectURL(prev.url);
+      }
+      return null;
+    });
   };
 
   if (loading) return <div className="loading">Loading...</div>;
@@ -269,8 +336,16 @@ export default function BlogDetailPage() {
                   <li key={pdf.id}>
                     <FiFile /> {pdf.filename}
                     <span className="attach-date">{new Date(pdf.uploaded_at).toLocaleDateString()}</span>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm attachment-view-btn"
+                      onClick={() => handleViewPdf(pdf)}
+                      disabled={viewingPdfId === pdf.id}
+                    >
+                      <FiExternalLink /> {viewingPdfId === pdf.id ? 'Opening...' : 'View'}
+                    </button>
                     {isAuthor && (
-                      <button className="btn-icon-danger" onClick={() => handleDeletePdf(pdf.id)}>
+                      <button type="button" className="btn-icon-danger" onClick={() => handleDeletePdf(pdf.id)}>
                         <FiTrash2 />
                       </button>
                     )}
@@ -311,8 +386,16 @@ export default function BlogDetailPage() {
                   <li key={img.id}>
                     <FiImage /> {img.filename}
                     <span className="attach-date">{new Date(img.uploaded_at).toLocaleDateString()}</span>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm attachment-view-btn"
+                      onClick={() => handleViewImage(img)}
+                      disabled={viewingImageId === img.id}
+                    >
+                      <FiEye /> {viewingImageId === img.id ? 'Opening...' : 'View'}
+                    </button>
                     {isAuthor && (
-                      <button className="btn-icon-danger" onClick={() => handleDeleteImage(img.id)}>
+                      <button type="button" className="btn-icon-danger" onClick={() => handleDeleteImage(img.id)}>
                         <FiTrash2 />
                       </button>
                     )}
@@ -320,6 +403,22 @@ export default function BlogDetailPage() {
                 ))}
               </ul>
             )}
+          </div>
+        </div>
+      )}
+
+      {imagePreview && (
+        <div className="image-preview-overlay" onClick={closeImagePreview} role="presentation">
+          <div className="image-preview-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={imagePreview.name}>
+            <div className="image-preview-header">
+              <h3>{imagePreview.name}</h3>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={closeImagePreview}>
+                <FiX /> Close
+              </button>
+            </div>
+            <div className="image-preview-body">
+              <img src={imagePreview.url} alt={imagePreview.name} className="image-preview-content" />
+            </div>
           </div>
         </div>
       )}

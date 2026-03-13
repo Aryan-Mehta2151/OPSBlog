@@ -114,6 +114,8 @@ export const pdfsApi = {
     form.append('file', file);
     return api.post(`/pdfs/blogs/${blogId}/upload`, form);
   },
+  view: (blogId: string, pdfId: string) =>
+    api.get(`/pdfs/blogs/${blogId}/pdfs/${pdfId}/view`, { responseType: 'blob' }),
   delete: (blogId: string, pdfId: string) =>
     api.delete(`/pdfs/blogs/${blogId}/pdfs/${pdfId}`),
 };
@@ -126,6 +128,8 @@ export const imagesApi = {
     form.append('file', file);
     return api.post(`/images/blogs/${blogId}/upload`, form);
   },
+  view: (blogId: string, imageId: string) =>
+    api.get(`/images/blogs/${blogId}/images/${imageId}/view`, { responseType: 'blob' }),
   delete: (blogId: string, imageId: string) =>
     api.delete(`/images/blogs/${blogId}/images/${imageId}`),
 };
@@ -136,6 +140,11 @@ export const searchApi = {
   query: (question: string, detail_level: string = 'normal') =>
     api.post('/search/query', { question, detail_level }),
   chunks: () => api.get('/search/chunks'),
+  listConversations: () => api.get('/search/conversations'),
+  createConversation: (data?: { title?: string }) => api.post('/search/conversations', data ?? {}),
+  updateConversation: (conversationId: string, data: { title: string; turns: Array<{ id: string; question: string; answer: string; sources: any[] }> }) =>
+    api.put(`/search/conversations/${conversationId}`, data),
+  deleteConversation: (conversationId: string) => api.delete(`/search/conversations/${conversationId}`),
 };
 
 export default api;

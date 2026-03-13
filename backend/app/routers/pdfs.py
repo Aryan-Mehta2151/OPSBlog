@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import os
@@ -33,6 +34,15 @@ def verify_author_or_admin(user: User, blog: BlogPost, db: Session):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the author or org admins can upload PDFs for this blog"
+        )
+
+def verify_org_member(user: User, blog: BlogPost, db: Session):
+    """Verify user belongs to the same organization as the blog."""
+    membership = get_single_org_membership(user, db)
+    if membership.org_id != blog.org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of this blog's organization"
         )
 
 class PdfUploadResponse(BaseModel):
@@ -137,9 +147,7 @@ def list_pdfs(
     if not blog:
         raise HTTPException(status_code=404, detail="Blog post not found")
 
-    membership = get_single_org_membership(current_user, db)
-    if membership.org_id != blog.org_id:
-        raise HTTPException(status_code=403, detail="You are not a member of this blog's organization")
+    verify_org_member(current_user, blog, db)
 
     pdfs = db.query(PdfDocument).filter(PdfDocument.blog_id == blog_id).all()
     return [
@@ -150,6 +158,37 @@ def list_pdfs(
             uploaded_at=pdf.uploaded_at.isoformat()
         ) for pdf in pdfs
     ]
+
+
+@router.get("/blogs/{blog_id}/pdfs/{pdf_id}/view")
+def view_pdf(
+    blog_id: str,
+    pdf_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Serve a PDF file to any member of the blog's organization."""
+    blog = db.query(BlogPost).filter(BlogPost.id == blog_id).first()
+    if not blog:
+        raise HTTPException(status_code=404, detail="Blog post not found")
+
+    verify_org_member(current_user, blog, db)
+
+    pdf = db.query(PdfDocument).filter(
+        PdfDocument.id == pdf_id,
+        PdfDocument.blog_id == blog_id
+    ).first()
+    if not pdf:
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    if not os.path.exists(pdf.file_path):
+        raise HTTPException(status_code=404, detail="PDF file not found on disk")
+
+    return FileResponse(
+        path=pdf.file_path,
+        media_type="application/pdf",
+        filename=pdf.filename,
+    )
 
 
 @router.delete("/blogs/{blog_id}/pdfs/{pdf_id}")

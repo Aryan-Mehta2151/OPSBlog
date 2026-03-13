@@ -5,10 +5,11 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.core.deps import get_db, get_current_user
-from app.db.models import User, Membership, PdfDocument, ImageDocument, BlogPost
+from app.db.models import User, Membership, PdfDocument, ImageDocument, BlogPost, SearchConversation
 from app.services.vector_service import vector_service
 
 router = APIRouter(prefix="/search", tags=["search"])
+MAX_CONVERSATIONS_PER_USER = 5
 
 
 def get_single_org_membership(user: User, db: Session):
@@ -44,6 +45,120 @@ class QueryRequest(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     sources: list[dict]
+
+
+class ChatTurnPayload(BaseModel):
+    id: str
+    question: str
+    answer: str
+    sources: list[dict] = []
+
+
+class ConversationCreateRequest(BaseModel):
+    title: str = "New chat"
+
+
+class ConversationUpdateRequest(BaseModel):
+    title: str
+    turns: list[ChatTurnPayload]
+
+
+class ConversationResponse(BaseModel):
+    id: str
+    title: str
+    created_at: str
+    updated_at: str
+    turns: list[ChatTurnPayload]
+
+
+def serialize_conversation(conversation: SearchConversation) -> ConversationResponse:
+    try:
+        turns = json.loads(conversation.turns_json or "[]")
+    except json.JSONDecodeError:
+        turns = []
+
+    return ConversationResponse(
+        id=conversation.id,
+        title=conversation.title,
+        created_at=conversation.created_at.isoformat(),
+        updated_at=conversation.updated_at.isoformat(),
+        turns=turns,
+    )
+
+
+def get_user_conversation_or_404(conversation_id: str, user_id: str, db: Session) -> SearchConversation:
+    conversation = db.query(SearchConversation).filter(
+        SearchConversation.id == conversation_id,
+        SearchConversation.user_id == user_id,
+    ).first()
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return conversation
+
+
+@router.get("/conversations", response_model=list[ConversationResponse])
+def list_conversations(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    conversations = (
+        db.query(SearchConversation)
+        .filter(SearchConversation.user_id == current_user.id)
+        .order_by(SearchConversation.updated_at.desc(), SearchConversation.created_at.desc())
+        .all()
+    )
+    return [serialize_conversation(conversation) for conversation in conversations]
+
+
+@router.post("/conversations", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
+def create_conversation(
+    data: ConversationCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    existing_count = db.query(SearchConversation).filter(SearchConversation.user_id == current_user.id).count()
+    if existing_count >= MAX_CONVERSATIONS_PER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"You can save up to {MAX_CONVERSATIONS_PER_USER} chats. Delete one to create a new chat."
+        )
+
+    conversation = SearchConversation(
+        user_id=current_user.id,
+        title=(data.title or "New chat").strip() or "New chat",
+        turns_json="[]",
+    )
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+    return serialize_conversation(conversation)
+
+
+@router.put("/conversations/{conversation_id}", response_model=ConversationResponse)
+def update_conversation(
+    conversation_id: str,
+    data: ConversationUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    conversation = get_user_conversation_or_404(conversation_id, current_user.id, db)
+    conversation.title = data.title.strip() or "New chat"
+    conversation.turns_json = json.dumps([turn.model_dump() for turn in data.turns])
+    db.commit()
+    db.refresh(conversation)
+    return serialize_conversation(conversation)
+
+
+@router.delete("/conversations/{conversation_id}", status_code=status.HTTP_200_OK)
+def delete_conversation(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    conversation = get_user_conversation_or_404(conversation_id, current_user.id, db)
+    db.delete(conversation)
+    db.commit()
+    return {"message": "Conversation deleted successfully"}
 
 
 @router.post("/index", status_code=status.HTTP_200_OK)

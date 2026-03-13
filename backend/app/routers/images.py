@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import os
@@ -32,6 +33,15 @@ def verify_author_or_admin(user: User, blog: BlogPost, db: Session):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the author or org admins can upload images for this blog"
+        )
+
+def verify_org_member(user: User, blog: BlogPost, db: Session):
+    """Verify user belongs to the same organization as the blog."""
+    membership = get_single_org_membership(user, db)
+    if membership.org_id != blog.org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of this blog's organization"
         )
 
 class ImageUploadResponse(BaseModel):
@@ -115,12 +125,7 @@ def list_images(
         raise HTTPException(status_code=404, detail="Blog post not found")
 
     # Verify user is member of the blog's org
-    membership = get_single_org_membership(current_user, db)
-    if membership.org_id != blog.org_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not a member of this blog's organization"
-        )
+    verify_org_member(current_user, blog, db)
 
     images = db.query(ImageDocument).filter(ImageDocument.blog_id == blog_id).all()
     return [
@@ -132,6 +137,46 @@ def list_images(
         )
         for img in images
     ]
+
+@router.get("/blogs/{blog_id}/images/{image_id}/view")
+def view_image(
+    blog_id: str,
+    image_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Serve an image file to any member of the blog's organization."""
+    blog = db.query(BlogPost).filter(BlogPost.id == blog_id).first()
+    if not blog:
+        raise HTTPException(status_code=404, detail="Blog post not found")
+
+    verify_org_member(current_user, blog, db)
+
+    image = db.query(ImageDocument).filter(
+        ImageDocument.id == image_id,
+        ImageDocument.blog_id == blog_id
+    ).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    if not os.path.exists(image.file_path):
+        raise HTTPException(status_code=404, detail="Image file not found on disk")
+
+    extension = os.path.splitext(image.filename)[1].lower()
+    media_types = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".bmp": "image/bmp",
+        ".webp": "image/webp",
+    }
+
+    return FileResponse(
+        path=image.file_path,
+        media_type=media_types.get(extension, "application/octet-stream"),
+        filename=image.filename,
+    )
 
 @router.delete("/blogs/{blog_id}/images/{image_id}")
 def delete_image(

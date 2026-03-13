@@ -33,6 +33,12 @@ class User(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    search_conversations = relationship(
+        "SearchConversation",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class Organization(Base):
@@ -118,3 +124,19 @@ class ImageDocument(Base):
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     blog = relationship("BlogPost", backref="images")
+
+
+class SearchConversation(Base):
+    __tablename__ = "search_conversations"
+    __table_args__ = (
+        Index("ix_search_conversations_user_updated", "user_id", "updated_at"),
+    )
+
+    id = Column(String, primary_key=True, default=uid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String, nullable=False, default="New chat")
+    turns_json = Column(Text, nullable=False, default="[]")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="search_conversations")
