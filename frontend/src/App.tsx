@@ -7,6 +7,7 @@ import BlogListPage from './pages/BlogListPage';
 import BlogCreatePage from './pages/BlogCreatePage';
 import BlogDetailPage from './pages/BlogDetailPage';
 import SearchPage from './pages/SearchPage';
+import { ToastContainer } from 'react-toastify';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token, loading } = useAuth();
@@ -41,6 +42,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <AppRoutes />
+        <ToastContainer position="top-right" autoClose={3000} newestOnTop closeOnClick pauseOnHover />
       </AuthProvider>
     </BrowserRouter>
   );

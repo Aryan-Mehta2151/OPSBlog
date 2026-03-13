@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { blogsApi, pdfsApi, imagesApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { FiEdit, FiTrash2, FiUpload, FiFile, FiImage, FiSave, FiX, FiEye, FiExternalLink } from 'react-icons/fi';
+import { getApiErrorMessage, notifyError, notifySuccess } from '../utils/toast';
 import './BlogDetail.css';
 
 interface Blog {
@@ -69,7 +70,9 @@ export default function BlogDetailPage() {
       setPdfs(pdfRes.data);
       setImages(imgRes.data);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load blog');
+      const msg = getApiErrorMessage(err, 'Failed to load blog');
+      setError(msg);
+      notifyError(msg);
     } finally {
       setLoading(false);
     }
@@ -107,8 +110,11 @@ export default function BlogDetailPage() {
       });
       setBlog(res.data);
       setEditing(false);
+      notifySuccess('Blog updated');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to update blog');
+      const msg = getApiErrorMessage(err, 'Failed to update blog');
+      setError(msg);
+      notifyError(msg);
     } finally {
       setSaving(false);
     }
@@ -118,9 +124,12 @@ export default function BlogDetailPage() {
     if (!window.confirm('Delete this blog and all its attachments?')) return;
     try {
       await blogsApi.delete(blogId!);
+      notifySuccess('Blog deleted');
       navigate('/');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to delete blog');
+      const msg = getApiErrorMessage(err, 'Failed to delete blog');
+      setError(msg);
+      notifyError(msg);
     }
   };
 
@@ -132,8 +141,11 @@ export default function BlogDetailPage() {
       await pdfsApi.upload(blogId!, file);
       const res = await pdfsApi.list(blogId!);
       setPdfs(res.data);
+      notifySuccess('PDF uploaded');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'PDF upload failed');
+      const msg = getApiErrorMessage(err, 'PDF upload failed');
+      setError(msg);
+      notifyError(msg);
     } finally {
       setUploading('');
       if (pdfInputRef.current) pdfInputRef.current.value = '';
@@ -148,8 +160,11 @@ export default function BlogDetailPage() {
       await imagesApi.upload(blogId!, file);
       const res = await imagesApi.list(blogId!);
       setImages(res.data);
+      notifySuccess('Image uploaded');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Image upload failed');
+      const msg = getApiErrorMessage(err, 'Image upload failed');
+      setError(msg);
+      notifyError(msg);
     } finally {
       setUploading('');
       if (imgInputRef.current) imgInputRef.current.value = '';
@@ -161,8 +176,11 @@ export default function BlogDetailPage() {
     try {
       await pdfsApi.delete(blogId!, pdfId);
       setPdfs((prev) => prev.filter((p) => p.id !== pdfId));
+      notifySuccess('PDF deleted');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to delete PDF');
+      const msg = getApiErrorMessage(err, 'Failed to delete PDF');
+      setError(msg);
+      notifyError(msg);
     }
   };
 
@@ -171,8 +189,11 @@ export default function BlogDetailPage() {
     try {
       await imagesApi.delete(blogId!, imageId);
       setImages((prev) => prev.filter((i) => i.id !== imageId));
+      notifySuccess('Image deleted');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to delete image');
+      const msg = getApiErrorMessage(err, 'Failed to delete image');
+      setError(msg);
+      notifyError(msg);
     }
   };
 
@@ -198,7 +219,9 @@ export default function BlogDetailPage() {
       if (previewWindow) {
         previewWindow.close();
       }
-      setError(err.response?.data?.detail || 'Failed to open PDF');
+      const msg = getApiErrorMessage(err, 'Failed to open PDF');
+      setError(msg);
+      notifyError(msg);
     } finally {
       setViewingPdfId(null);
     }
@@ -217,7 +240,9 @@ export default function BlogDetailPage() {
         return { name: image.filename, url: nextUrl };
       });
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to open image');
+      const msg = getApiErrorMessage(err, 'Failed to open image');
+      setError(msg);
+      notifyError(msg);
     } finally {
       setViewingImageId(null);
     }
@@ -233,13 +258,10 @@ export default function BlogDetailPage() {
   };
 
   if (loading) return <div className="loading">Loading...</div>;
-  if (error && !blog) return <div className="error-msg">{error}</div>;
-  if (!blog) return <div className="error-msg">Blog not found</div>;
+  if (!blog) return <div className="loading">Blog not found.</div>;
 
   return (
     <div className="blog-detail">
-      {error && <div className="error-msg" style={{ marginBottom: '1rem' }}>{error}</div>}
-
       {/* Header */}
       <div className="detail-header">
         {editing ? (

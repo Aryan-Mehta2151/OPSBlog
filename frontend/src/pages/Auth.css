@@ -6,6 +6,34 @@
   background: var(--color-bg);
 }
 
+.auth-theme-corner-toggle {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 20;
+}
+
+.auth-theme-corner-toggle svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.auth-theme-corner-toggle:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
 .auth-card {
   background: var(--color-surface);
   padding: 2.5rem;

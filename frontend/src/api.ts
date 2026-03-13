@@ -1,9 +1,17 @@
 import axios from 'axios';
+import { notifyError } from './utils/toast';
+
+const isAuthPagePath = () => {
+  const path = window.location.pathname.toLowerCase();
+  return path === '/login' || path === '/signup';
+};
 
 export function handleSessionExpired() {
   localStorage.removeItem('token');
   localStorage.removeItem('refresh_token');
-  alert('Your session has expired. Please log in again.');
+  if (!isAuthPagePath()) {
+    notifyError('Your session has expired. Please log in again.');
+  }
   if (window.location.pathname !== '/login') {
     window.location.replace('/login');
   }
@@ -30,10 +38,20 @@ let refreshQueue: Array<(token: string) => void> = [];
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config;
+    const originalRequest = error.config || {};
+    const requestUrl = String(originalRequest.url || '');
+    const hadAuthHeader = Boolean(originalRequest.headers?.Authorization);
+    const isAuthRequest =
+      requestUrl.includes('/auth/login') ||
+      requestUrl.includes('/auth/signup') ||
+      requestUrl.includes('/auth/refresh');
 
     // If 401 and we haven't already tried to refresh for this request
     if (error.response?.status === 401 && !originalRequest._retry) {
+      if (isAuthRequest || !hadAuthHeader) {
+        return Promise.reject(error);
+      }
+
       const refreshToken = localStorage.getItem('refresh_token');
 
       // No refresh token → session expired prompt

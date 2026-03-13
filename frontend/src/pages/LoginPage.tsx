@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { authApi } from '../api';
 import { useAuth } from '../context/AuthContext';
+import { FiMoon, FiSun } from 'react-icons/fi';
+import { getApiErrorMessage, notifyError, notifySuccess } from '../utils/toast';
 import './Auth.css';
 
 const ORGS = ['Google', 'Amazon', 'Meta'];
@@ -10,21 +12,34 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [organization, setOrganization] = useState(ORGS[0]);
-  const [error, setError] = useState('');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const savedTheme = localStorage.getItem('theme');
+    return savedTheme === 'dark' ? 'dark' : 'light';
+  });
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { login } = useAuth();
 
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((currentTheme) => (currentTheme === 'light' ? 'dark' : 'light'));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
     try {
       const res = await authApi.login({ email, password, organization });
       await login(res.data.access_token, res.data.refresh_token);
+      notifySuccess('Signed in successfully');
       navigate('/');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Login failed');
+      const msg = getApiErrorMessage(err, 'Login failed');
+      notifyError(msg);
     } finally {
       setLoading(false);
     }
@@ -32,10 +47,18 @@ export default function LoginPage() {
 
   return (
     <div className="auth-container">
+      <button
+        type="button"
+        className="auth-theme-corner-toggle"
+        onClick={toggleTheme}
+        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      >
+        {theme === 'dark' ? <FiSun /> : <FiMoon />}
+      </button>
       <div className="auth-card">
         <h1>OpsBlog</h1>
         <h2>Sign In</h2>
-        {error && <div className="auth-error">{error}</div>}
         <form onSubmit={handleSubmit}>
           <label>Email</label>
           <input

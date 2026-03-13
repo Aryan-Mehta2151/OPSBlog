@@ -1,4 +1,5 @@
 import json
+import re
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -35,6 +36,22 @@ def verify_admin(membership):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can perform this action"
         )
+
+
+def fallback_no_context_answer(question: str) -> str:
+    """Provide a friendly deterministic response when nothing is indexed yet."""
+    normalized = (question or "").strip().lower()
+    greeting_pattern = r"^(hi|hello|hey|yo|good morning|good afternoon|good evening)\b"
+
+    if re.match(greeting_pattern, normalized):
+        return (
+            "Hi! I can help you search your blog content. "
+            "There are no blogs yet for your organization, so I do not have content to help you yet."
+        )
+
+    return (
+        "I don't know yet because there there are no blogs posted in your organization."
+    )
 
 
 class QueryRequest(BaseModel):
@@ -220,14 +237,15 @@ def query_blogs(
         else:  # normal
             n_results = 5
         
-        # Search for similar chunks scoped to user's organization
-        results = vector_service.search_similar_chunks(data.question, n_results=n_results, org_id=membership.org_id)
+        # Search for similar chunks scoped to user's organization.
+        # If vector DB has nothing indexed yet, fall back to a deterministic answer.
+        try:
+            results = vector_service.search_similar_chunks(data.question, n_results=n_results, org_id=membership.org_id)
+        except Exception:
+            results = {"documents": [[]], "metadatas": [[]]}
 
-        if not results['documents'] or not results['documents'][0]:
-            return QueryResponse(
-                answer="I couldn't find any relevant information in the blog posts.",
-                sources=[]
-            )
+        if not results.get('documents') or not results['documents'][0]:
+            return QueryResponse(answer=fallback_no_context_answer(data.question), sources=[])
 
         # Extract context from results
         context_chunks = [c for c in results['documents'][0] if c]
@@ -282,11 +300,15 @@ def query_blogs_stream(
         else:
             n_results, max_tokens = 5, 500
 
-        results = vector_service.search_similar_chunks(data.question, n_results=n_results, org_id=membership.org_id)
+        try:
+            results = vector_service.search_similar_chunks(data.question, n_results=n_results, org_id=membership.org_id)
+        except Exception:
+            results = {"documents": [[]], "metadatas": [[]]}
 
-        if not results['documents'] or not results['documents'][0]:
+        if not results.get('documents') or not results['documents'][0]:
             def empty():
-                yield f"data: {json.dumps({'type': 'answer', 'content': 'I could not find any relevant information.'})}\n\n"
+                answer = fallback_no_context_answer(data.question)
+                yield f"data: {json.dumps({'type': 'answer', 'content': answer})}\n\n"
                 yield f"data: {json.dumps({'type': 'sources', 'sources': []})}\n\n"
                 yield "data: [DONE]\n\n"
             return StreamingResponse(empty(), media_type="text/event-stream")

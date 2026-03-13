@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { handleSessionExpired, searchApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { FiSearch, FiRefreshCw, FiDatabase, FiPlus, FiTrash2 } from 'react-icons/fi';
+import { getApiErrorMessage, notifyError, notifySuccess } from '../utils/toast';
 import './Search.css';
 
 interface Source {
@@ -25,6 +26,11 @@ interface Conversation {
   createdAt: string;
   updatedAt: string;
   turns: ChatTurn[];
+}
+
+interface StreamResult {
+  answer: string;
+  sources: Source[];
 }
 
 const buildConversationTitle = (query: string) => {
@@ -89,7 +95,9 @@ export default function SearchPage() {
           return loadedConversations[0]?.id ?? null;
         });
       } catch (err: any) {
-        setError(err.response?.data?.detail || 'Failed to load saved chats');
+        const msg = getApiErrorMessage(err, 'Failed to load saved chats');
+        setError(msg);
+        notifyError(msg);
       } finally {
         setLoadingConversations(false);
       }
@@ -195,7 +203,7 @@ export default function SearchPage() {
     turnId: string,
     token: string | null,
     hasRetried = false
-  ): Promise<void> => {
+  ): Promise<StreamResult> => {
     const base = import.meta.env.VITE_API_BASE_URL ?? '/api';
     const res = await fetch(`${base}/search/query/stream`, {
       method: 'POST',
@@ -213,7 +221,7 @@ export default function SearchPage() {
           return streamSearch(query, conversationId, turnId, newToken, true);
         }
         handleSessionExpired();
-        return;
+        return { answer: '', sources: [] };
       }
 
       const errData = await res.json().catch(() => null);
@@ -227,6 +235,8 @@ export default function SearchPage() {
 
     const decoder = new TextDecoder();
     let buffer = '';
+    let fullAnswer = '';
+    let finalSources: Source[] = [];
 
     while (true) {
       const { done, value } = await reader.read();
@@ -244,8 +254,10 @@ export default function SearchPage() {
         try {
           const msg = JSON.parse(payload);
           if (msg.type === 'answer') {
+            fullAnswer += msg.content || '';
             updateTurn(conversationId, turnId, (turn) => ({ ...turn, answer: turn.answer + msg.content }));
           } else if (msg.type === 'sources') {
+            finalSources = msg.sources || [];
             updateTurn(conversationId, turnId, (turn) => ({ ...turn, sources: msg.sources || [] }));
           }
         } catch {
@@ -253,6 +265,8 @@ export default function SearchPage() {
         }
       }
     }
+
+    return { answer: fullAnswer, sources: finalSources };
   };
 
   const handleSearch = async (e: React.FormEvent) => {
@@ -292,21 +306,26 @@ export default function SearchPage() {
     try {
       await persistConversation(updatedConversation);
       const token = localStorage.getItem('token');
-      await streamSearch(query, conversationId, turnId, token);
-      const latestConversation = conversationsRef.current.find((conversation) => conversation.id === conversationId);
-      if (latestConversation) {
-        await persistConversation(latestConversation);
-      }
+      const streamResult = await streamSearch(query, conversationId, turnId, token);
+      const finalizedConversation: Conversation = {
+        ...updatedConversation,
+        updatedAt: new Date().toISOString(),
+        turns: updatedConversation.turns.map((existingTurn) =>
+          existingTurn.id === turnId
+            ? {
+                ...existingTurn,
+                answer: streamResult.answer,
+                sources: streamResult.sources,
+              }
+            : existingTurn
+        ),
+      };
+      upsertConversationLocally(finalizedConversation, true);
+      await persistConversation(finalizedConversation);
     } catch (err: any) {
-      setError(err.message || 'Search failed');
-      const latestConversation = conversationsRef.current.find((conversation) => conversation.id === conversationId);
-      if (latestConversation) {
-        try {
-          await persistConversation(latestConversation);
-        } catch {
-          // Ignore secondary persistence failures after a search error.
-        }
-      }
+      const msg = getApiErrorMessage(err, 'Search failed');
+      setError(msg);
+      notifyError(msg);
     } finally {
       setSearching(false);
       setActiveTurnId(null);
@@ -319,8 +338,11 @@ export default function SearchPage() {
     try {
       const res = await searchApi.index();
       setIndexMsg(res.data.message);
+      notifySuccess(res.data.message || 'Re-index completed');
     } catch (err: any) {
-      setIndexMsg(err.response?.data?.detail || 'Indexing failed');
+      const msg = getApiErrorMessage(err, 'Indexing failed');
+      setIndexMsg(msg);
+      notifyError(msg);
     } finally {
       setIndexing(false);
     }
@@ -336,7 +358,9 @@ export default function SearchPage() {
       setChunks(res.data);
       setShowChunks(true);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load chunks');
+      const msg = getApiErrorMessage(err, 'Failed to load chunks');
+      setError(msg);
+      notifyError(msg);
     }
   };
 
@@ -352,7 +376,9 @@ export default function SearchPage() {
       await createConversation();
       setQuestion('');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to create a new chat');
+      const msg = getApiErrorMessage(err, 'Failed to create a new chat');
+      setError(msg);
+      notifyError(msg);
     }
   };
 
@@ -376,8 +402,11 @@ export default function SearchPage() {
         return remaining[0]?.id ?? null;
       });
       setError('');
+      notifySuccess('Chat deleted');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to delete chat');
+      const msg = getApiErrorMessage(err, 'Failed to delete chat');
+      setError(msg);
+      notifyError(msg);
     }
   };
 
@@ -466,7 +495,6 @@ export default function SearchPage() {
           </form>
 
           {indexMsg && <div className="success-msg">{indexMsg}</div>}
-          {error && <div className="error-msg">{error}</div>}
         </div>
 
         {showChunks ? (

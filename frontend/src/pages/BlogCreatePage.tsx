@@ -1,24 +1,25 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { blogsApi } from '../api';
+import { getApiErrorMessage, notifyError, notifySuccess } from '../utils/toast';
 import './Blogs.css';
 
 export default function BlogCreatePage() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
     setSaving(true);
     try {
       const res = await blogsApi.create({ title, content });
+      notifySuccess('Blog created successfully');
       navigate(`/blogs/${res.data.id}`);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to create blog');
+      const msg = getApiErrorMessage(err, 'Failed to create blog');
+      notifyError(msg);
     } finally {
       setSaving(false);
     }
@@ -27,7 +28,6 @@ export default function BlogCreatePage() {
   return (
     <div>
       <h1>Create Blog Post</h1>
-      {error && <div className="error-msg">{error}</div>}
       <form className="blog-form" onSubmit={handleSubmit}>
         <label>Title</label>
         <input
