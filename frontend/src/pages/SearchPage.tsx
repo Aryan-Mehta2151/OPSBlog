@@ -37,9 +37,41 @@ export default function SearchPage() {
   const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
+  // Load chat history from sessionStorage on mount
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chat, searching]);
+    const savedChat = sessionStorage.getItem('searchChat');
+    const savedExpandedSources = sessionStorage.getItem('expandedSources');
+
+    if (savedChat) {
+      try {
+        setChat(JSON.parse(savedChat));
+      } catch (e) {
+        console.error('Failed to parse saved chat:', e);
+      }
+    }
+
+    if (savedExpandedSources) {
+      try {
+        setExpandedSources(JSON.parse(savedExpandedSources));
+      } catch (e) {
+        console.error('Failed to parse saved expanded sources:', e);
+      }
+    }
+  }, []);
+
+  // Save chat history to sessionStorage whenever it changes
+  useEffect(() => {
+    if (chat.length > 0) {
+      sessionStorage.setItem('searchChat', JSON.stringify(chat));
+    }
+  }, [chat]);
+
+  // Save expanded sources to sessionStorage whenever it changes
+  useEffect(() => {
+    if (Object.keys(expandedSources).length > 0) {
+      sessionStorage.setItem('expandedSources', JSON.stringify(expandedSources));
+    }
+  }, [expandedSources]);
 
   const updateTurn = (turnId: string, updater: (turn: ChatTurn) => ChatTurn) => {
     setChat((prev) => prev.map((turn) => (turn.id === turnId ? updater(turn) : turn)));
@@ -183,6 +215,13 @@ export default function SearchPage() {
     }));
   };
 
+  const clearChatHistory = () => {
+    setChat([]);
+    setExpandedSources({});
+    sessionStorage.removeItem('searchChat');
+    sessionStorage.removeItem('expandedSources');
+  };
+
   return (
     <div className="search-page">
       <div className="search-toolbar">
@@ -217,6 +256,11 @@ export default function SearchPage() {
             <button type="submit" className="btn btn-primary" disabled={searching}>
               <FiSearch /> {searching ? 'Searching...' : 'Search'}
             </button>
+            {chat.length > 0 && (
+              <button type="button" className="btn btn-secondary" onClick={clearChatHistory}>
+                Clear Chat
+              </button>
+            )}
           </div>
         </form>
 
