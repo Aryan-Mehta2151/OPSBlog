@@ -115,8 +115,8 @@ export const authApi = {
 
 // ─── Blogs ───
 export const blogsApi = {
-  list: () => api.get('/blogs/'),
-  changes: () => api.get('/blogs/changes'),
+  list: () => api.get('/blogs/', { params: { _ts: Date.now() } }),
+  changes: () => api.get('/blogs/changes', { params: { _ts: Date.now() } }),
   get: (id: string) => api.get(`/blogs/${id}`),
   create: (data: { title: string; content?: string }) =>
     api.post('/blogs/', data),
