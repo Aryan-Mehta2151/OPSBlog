@@ -20,6 +20,8 @@ langchain-community
 langchain-openai
 langchain-text-splitters
 requests
+trafilatura
+beautifulsoup4
 
 pymupdf
 Pillow

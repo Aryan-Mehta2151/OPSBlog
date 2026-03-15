@@ -122,6 +122,8 @@ export const blogsApi = {
   get: (id: string) => api.get(`/blogs/${id}`),
   create: (data: { title: string; content?: string }) =>
     api.post('/blogs/', data),
+  importFromUrl: (data: { url: string; detail_level?: string; output_mode?: string }) =>
+    api.post('/blogs/import-from-url', data),
   update: (id: string, data: { title?: string; content?: string; status?: string }) =>
     api.put(`/blogs/${id}`, data),
   delete: (id: string) => api.delete(`/blogs/${id}`),

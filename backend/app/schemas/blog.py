@@ -6,6 +6,20 @@ class BlogCreateRequest(BaseModel):
     title: str
     content: str = ""
 
+
+class BlogImportRequest(BaseModel):
+    url: str
+    detail_level: str = "normal"  # brief | normal | detailed
+    output_mode: str = "paraphrase"  # summary | paraphrase | exact
+
+
+class BlogImportResponse(BaseModel):
+    title: str
+    content: str
+    source_url: str
+    source_title: str
+    output_mode: str
+
 class BlogUpdateRequest(BaseModel):
     title: str | None = None
     content: str | None = None

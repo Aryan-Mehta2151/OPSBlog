@@ -6,8 +6,21 @@ from sqlalchemy import func, or_
 
 from app.core.deps import get_db, get_current_user
 from app.db.models import User, BlogPost, Membership, PdfDocument, ImageDocument
-from app.schemas.blog import BlogCreateRequest, BlogUpdateRequest, BlogResponse, BlogListResponse
+from app.schemas.blog import (
+    BlogCreateRequest,
+    BlogUpdateRequest,
+    BlogResponse,
+    BlogListResponse,
+    BlogImportRequest,
+    BlogImportResponse,
+)
 from app.services.vector_service import vector_service
+from app.services.web_import_service import (
+    validate_public_url,
+    fetch_url_html,
+    extract_article_text,
+    generate_blog_draft_from_source,
+)
 
 router = APIRouter(prefix="/blogs", tags=["blogs"])
 
@@ -67,6 +80,44 @@ def create_blog(
             print(f"Blog updated but reindex failed for {blog.id}: {e}")
     
     return blog
+
+
+@router.post("/import-from-url", response_model=BlogImportResponse, status_code=status.HTTP_200_OK)
+def import_blog_from_url(
+    data: BlogImportRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Fetch an external article URL and generate a draft blog."""
+    membership = get_single_org_membership(current_user, db)
+    verify_admin(membership)
+
+    try:
+        normalized_url = validate_public_url(data.url)
+        html = fetch_url_html(normalized_url)
+        source_title, source_text = extract_article_text(html, normalized_url)
+        draft_title, draft_content = generate_blog_draft_from_source(
+            source_url=normalized_url,
+            source_title=source_title,
+            source_text=source_text,
+            detail_level=(data.detail_level or "normal").strip().lower(),
+            output_mode=(data.output_mode or "paraphrase").strip().lower(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import blog from URL: {str(exc)}",
+        )
+
+    return BlogImportResponse(
+        title=draft_title,
+        content=draft_content,
+        source_url=normalized_url,
+        source_title=source_title,
+        output_mode=(data.output_mode or "paraphrase").strip().lower(),
+    )
 
 
 @router.get("/", response_model=list[BlogListResponse])
