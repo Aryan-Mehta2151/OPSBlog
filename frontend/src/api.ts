@@ -19,8 +19,10 @@ export function handleSessionExpired() {
 
 // In dev: '/api' proxied by Vite to localhost:8000
 // In prod: '' (same origin, served by FastAPI)
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').trim() || '/api';
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? '/api',
+  baseURL: API_BASE_URL,
 });
 
 api.interceptors.request.use((config) => {
@@ -75,7 +77,7 @@ api.interceptors.response.use(
 
       try {
         const res = await axios.post(
-          `${import.meta.env.VITE_API_BASE_URL ?? '/api'}/auth/refresh`,
+          `${API_BASE_URL}/auth/refresh`,
           { refresh_token: refreshToken }
         );
         const newAccess = res.data.access_token;

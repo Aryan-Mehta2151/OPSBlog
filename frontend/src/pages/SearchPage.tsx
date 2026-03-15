@@ -204,7 +204,7 @@ export default function SearchPage() {
     token: string | null,
     hasRetried = false
   ): Promise<StreamResult> => {
-    const base = import.meta.env.VITE_API_BASE_URL ?? '/api';
+    const base = (import.meta.env.VITE_API_BASE_URL || '/api').trim() || '/api';
     const res = await fetch(`${base}/search/query/stream`, {
       method: 'POST',
       headers: {
