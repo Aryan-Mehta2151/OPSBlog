@@ -2,6 +2,7 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
 
 from app.core.deps import get_db, get_current_user
 from app.db.models import User, BlogPost, Membership, PdfDocument, ImageDocument
@@ -73,10 +74,46 @@ def list_blogs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get all blogs from user's current org"""
+    """Get published org blogs plus current user's own drafts."""
     membership = get_single_org_membership(current_user, db)
-    blogs = db.query(BlogPost).filter(BlogPost.org_id == membership.org_id).order_by(BlogPost.created_at.desc()).all()
+
+    blogs = (
+        db.query(BlogPost)
+        .filter(BlogPost.org_id == membership.org_id)
+        .filter(
+            (BlogPost.status.ilike("published")) |
+            (BlogPost.author_id == current_user.id)
+        )
+        .order_by(BlogPost.updated_at.desc(), BlogPost.created_at.desc())
+        .all()
+    )
     return blogs
+
+
+@router.get("/changes", status_code=status.HTTP_200_OK)
+def blogs_changes(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Return a lightweight org-scoped change signature for blog list refresh checks."""
+    membership = get_single_org_membership(current_user, db)
+
+    visible = (
+        db.query(BlogPost)
+        .filter(BlogPost.org_id == membership.org_id)
+        .filter(
+            (BlogPost.status.ilike("published")) |
+            (BlogPost.author_id == current_user.id)
+        )
+    )
+
+    latest_updated_at = visible.with_entities(func.max(BlogPost.updated_at)).scalar()
+    count = visible.count()
+
+    return {
+        "latest_updated_at": latest_updated_at.isoformat() if latest_updated_at else None,
+        "count": count,
+    }
 
 
 @router.get("/{blog_id}", response_model=BlogResponse)
@@ -100,6 +137,13 @@ def get_blog(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not a member of this blog's organization"
+        )
+
+    # Draft privacy: only the author can view drafts.
+    if (blog.status or "").lower() == "draft" and blog.author_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Blog not found"
         )
 
     return blog
@@ -128,20 +172,41 @@ def update_blog(
             detail="Only the author can edit this blog"
         )
     
+    prev_status = (blog.status or "").lower()
+    title_changed = False
+    content_changed = False
+
     # Update fields
     if data.title is not None:
+        title_changed = data.title != blog.title
         blog.title = data.title
     if data.content is not None:
+        content_changed = data.content != blog.content
         blog.content = data.content
     if data.status is not None:
-        blog.status = data.status
+        normalized_status = data.status.strip().lower()
+        if normalized_status not in {"draft", "published"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid status. Allowed values: draft, published"
+            )
+        blog.status = normalized_status
     
     db.commit()
     db.refresh(blog)
     
-    # Index for search if published
-    if blog.status == "published":
-        vector_service.index_single_blog(blog.id, db)
+    # Reindex when a blog is published or when published content changes.
+    current_status = (blog.status or "").lower()
+    should_reindex = (
+        current_status == "published"
+        and (prev_status != "published" or title_changed or content_changed)
+    )
+
+    if should_reindex:
+        try:
+            vector_service.index_single_blog(blog.id, db)
+        except Exception as e:
+            print(f"Blog updated but reindex failed for {blog.id}: {e}")
     
     return blog
 

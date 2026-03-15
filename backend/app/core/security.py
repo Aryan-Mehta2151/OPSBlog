@@ -6,8 +6,8 @@ from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-REFRESH_TOKEN_EXPIRE_DAYS = 7
+ACCESS_TOKEN_EXPIRE_MINUTES = max(5, settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+REFRESH_TOKEN_EXPIRE_DAYS = max(1, settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
 def hash_password(password: str) -> str:
     """Hash a plain password using bcrypt"""
@@ -18,7 +18,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 def create_access_token(user_id: str) -> str:
-    """Create short-lived JWT access token (30 min)"""
+    """Create short-lived JWT access token."""
     now = datetime.now(timezone.utc)
     expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
@@ -30,7 +30,7 @@ def create_access_token(user_id: str) -> str:
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGO)
 
 def create_refresh_token(user_id: str) -> str:
-    """Create long-lived JWT refresh token (7 days)"""
+    """Create long-lived JWT refresh token."""
     now = datetime.now(timezone.utc)
     expire = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {

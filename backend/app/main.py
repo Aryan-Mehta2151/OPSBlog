@@ -25,11 +25,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router)
-app.include_router(blogs.router)
-app.include_router(vector_search.router)
-app.include_router(pdfs.router)
-app.include_router(images.router)
+app.include_router(auth.router, prefix="/api")
+app.include_router(blogs.router, prefix="/api")
+app.include_router(vector_search.router, prefix="/api")
+app.include_router(pdfs.router, prefix="/api")
+app.include_router(images.router, prefix="/api")
 
 @app.get("/health")
 def health():

@@ -42,11 +42,10 @@ def _create_embeddings():
     """
     provider = os.getenv("EMBEDDING_PROVIDER")
     if provider:
-        provider = provider.lower()
+        provider = provider.lower().strip()
     else:
-        # In Render/production prefer OpenAI automatically, since Ollama is not available there.
-        is_render = os.getenv("RENDER") == "true" or bool(os.getenv("RENDER_EXTERNAL_URL"))
-        provider = "openai" if is_render and os.getenv("OPENAI_API_KEY") else "ollama"
+        # Auto-select OpenAI when a key is present; otherwise fall back to Ollama.
+        provider = "openai" if os.getenv("OPENAI_API_KEY") else "ollama"
 
     if provider == "openai":
         from langchain_openai import OpenAIEmbeddings  # type: ignore
@@ -60,12 +59,24 @@ def _create_embeddings():
     else:
         from langchain_community.embeddings import OllamaEmbeddings  # type: ignore
         ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        embeddings = OllamaEmbeddings(
-            model="nomic-embed-text",
-            base_url=ollama_url,
-        )
-        print(f"Ollama embeddings initialized ({ollama_url})")
-        return embeddings
+        try:
+            embeddings = OllamaEmbeddings(
+                model="nomic-embed-text",
+                base_url=ollama_url,
+            )
+            # Verify connectivity early so indexing failures are explicit.
+            embeddings.embed_query("healthcheck")
+            print(f"Ollama embeddings initialized ({ollama_url})")
+            return embeddings
+        except Exception as e:
+            if os.getenv("OPENAI_API_KEY"):
+                from langchain_openai import OpenAIEmbeddings  # type: ignore
+                print(f"Ollama unavailable ({e}). Falling back to OpenAI embeddings.")
+                return OpenAIEmbeddings(
+                    model=OPENAI_EMBEDDING_MODEL,
+                    openai_api_key=os.getenv("OPENAI_API_KEY"),
+                )
+            raise
 
 
 class VectorService:
@@ -94,6 +105,18 @@ class VectorService:
             chunk_overlap=200,
             length_function=len,
         )
+
+    def _reset_collection(self):
+        """Recreate the collection when stored embedding dimension is incompatible."""
+        try:
+            self.client.delete_collection(name="blog_posts")
+        except Exception:
+            pass
+        self.collection = self.client.get_or_create_collection(
+            name="blog_posts",
+            embedding_function=None,
+        )
+        print("Recreated Chroma collection 'blog_posts' for current embedding configuration")
 
     def fetch_all_blog_posts(self, db: Session, org_id: str = None) -> List[Dict[str, Any]]:
         """Fetch all published blog posts with metadata, optionally scoped to an org"""
@@ -184,6 +207,20 @@ class VectorService:
             print(f"Stored {len(ids)} chunks in ChromaDB")
 
         except Exception as e:
+            # Common after changing embedding provider/model (e.g., 768 -> 1536 dims).
+            # Recreate collection once and retry add.
+            if "expecting embedding with dimension" in str(e).lower():
+                print(f"Embedding dimension mismatch detected: {e}")
+                self._reset_collection()
+                collection = self.client.get_collection(name="blog_posts", embedding_function=None)
+                collection.add(
+                    ids=ids,
+                    documents=documents,
+                    embeddings=embeddings,
+                    metadatas=metadatas,
+                )
+                print(f"Stored {len(ids)} chunks in ChromaDB after collection reset")
+                return
             print(f"Error in embed_and_store_chunks: {e}")
             raise
 

@@ -57,7 +57,7 @@ export default function LoginPage() {
         {theme === 'dark' ? <FiSun /> : <FiMoon />}
       </button>
       <div className="auth-card">
-        <h1>OpsBlog</h1>
+        <h1>SmartBlog</h1>
         <h2>Sign In</h2>
         <form onSubmit={handleSubmit}>
           <label>Email</label>

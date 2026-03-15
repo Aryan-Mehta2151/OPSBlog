@@ -32,7 +32,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     <div className="layout">
       <nav className="navbar">
         <div className="nav-left">
-          <Link to="/" className="nav-brand">OpsBlog</Link>
+          <Link to="/" className="nav-brand">SmartBlog</Link>
           <span className="nav-org">{orgName}</span>
         </div>
         <div className="nav-links">

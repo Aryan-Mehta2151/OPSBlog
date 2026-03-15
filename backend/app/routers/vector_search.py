@@ -41,7 +41,7 @@ def verify_admin(membership):
 def fallback_no_context_answer(question: str) -> str:
     """Provide a friendly deterministic response when nothing is indexed yet."""
     normalized = (question or "").strip().lower()
-    greeting_pattern = r"^(hi|hello|hey|yo|good morning|good afternoon|good evening)\b"
+    greeting_pattern = r"^(hi|hii|hiii|hello|hey|yo|good morning|good afternoon|good evening)\b"
 
     if re.match(greeting_pattern, normalized):
         return (
