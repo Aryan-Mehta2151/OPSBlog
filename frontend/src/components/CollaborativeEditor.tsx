@@ -107,6 +107,7 @@ export default function CollaborativeEditor({
 		).trim();
 		const provider = new WebsocketProvider(wsServer, blogId, ydoc, {
 			params: { token },
+			connect: true,
 		});
 
 		setSession({ ydoc, provider });
@@ -121,12 +122,21 @@ export default function CollaborativeEditor({
 			setIsSynced(synced);
 		};
 
+		const handleVisibilityChange = () => {
+			if (document.hidden) return;
+			// Tab became visible - force reconnect and resync
+			provider.disconnect();
+			setTimeout(() => provider.connect(), 100);
+		};
+
 		provider.on('status', handleStatus);
 		provider.on('sync', handleSyncState);
+		document.addEventListener('visibilitychange', handleVisibilityChange);
 
 		return () => {
 			provider.off('status', handleStatus);
 			provider.off('sync', handleSyncState);
+			document.removeEventListener('visibilitychange', handleVisibilityChange);
 			provider.destroy();
 			ydoc.destroy();
 			setSession(null);
