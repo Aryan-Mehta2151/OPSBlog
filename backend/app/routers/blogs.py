@@ -254,8 +254,8 @@ def update_blog(
     is_owner = blog.author_id == current_user.id
     is_accepted_collaborator = has_accepted_invite(blog.id, current_user.id, db)
 
-    # Author can always edit; accepted collaborators can edit only when collaboration is enabled.
-    if not is_owner and not (blog.collab_enabled and is_accepted_collaborator):
+    # Author can always edit; accepted collaborators can edit via invite access.
+    if not is_owner and not is_accepted_collaborator:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the author or accepted collaborators can edit this blog"

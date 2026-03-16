@@ -127,10 +127,6 @@ async def collab_ws(websocket: WebSocket, blog_id: str, token: str = Query(...))
 			print(f"[collab] not found user/blog blog={blog_id} user_id={user_id}")
 			await websocket.close(code=4004)
 			return
-		if not blog.collab_enabled:
-			print(f"[collab] collaboration disabled blog={blog_id}")
-			await websocket.close(code=4003)
-			return
 		# Access control: only the blog owner OR users with an accepted invite may collaborate
 		is_owner = blog.author_id == user_id
 		if not is_owner:

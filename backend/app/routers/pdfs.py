@@ -35,7 +35,7 @@ def verify_author_admin_or_collaborator(user: User, blog: BlogPost, db: Session)
         CollabInvite.recipient_id == user.id,
         CollabInvite.status == "accepted",
     ).first()
-    if accepted_invite and blog.collab_enabled:
+    if accepted_invite:
         return
 
     membership = get_single_org_membership(user, db)

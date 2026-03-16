@@ -12,7 +12,6 @@ interface Blog {
   title: string;
   content: string;
   status: string;
-  collab_enabled: boolean;
   author_id: string;
   author_username: string | null;
   org_id: string;
@@ -56,7 +55,6 @@ export default function BlogDetailPage() {
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
   const [editStatus, setEditStatus] = useState('');
-  const [editCollabEnabled, setEditCollabEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
 
   // Upload state
@@ -69,7 +67,7 @@ export default function BlogDetailPage() {
   const imgInputRef = useRef<HTMLInputElement>(null);
 
   const isAuthor = blog?.author_id === user?.id;
-  const canEdit = Boolean(isAuthor || (isCollaborator && blog?.collab_enabled));
+  const canEdit = Boolean(isAuthor || isCollaborator);
   const canManageAttachments = canEdit;
 
   const fetchBlog = async () => {
@@ -111,7 +109,6 @@ export default function BlogDetailPage() {
     setEditTitle(blog.title);
     setEditContent(blog.content);
     setEditStatus(blog.status);
-    setEditCollabEnabled(Boolean(blog.collab_enabled));
     setEditing(true);
   };
 
@@ -124,7 +121,6 @@ export default function BlogDetailPage() {
         title: string;
         content: string;
         status?: string;
-        collab_enabled?: boolean;
       } = {
         title: editTitle,
         content: editContent,
@@ -132,7 +128,6 @@ export default function BlogDetailPage() {
 
       if (isAuthor) {
         payload.status = editStatus;
-        payload.collab_enabled = editCollabEnabled;
       }
 
       const res = await blogsApi.update(blogId!, payload);
@@ -319,20 +314,10 @@ export default function BlogDetailPage() {
           {editing ? (
             <>
               {isAuthor && (
-                <>
-                  <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)}>
-                    <option value="draft">Draft</option>
-                    <option value="published">Published</option>
-                  </select>
-                  <label className="collab-toggle">
-                    <input
-                      type="checkbox"
-                      checked={editCollabEnabled}
-                      onChange={(e) => setEditCollabEnabled(e.target.checked)}
-                    />
-                    Enable collaborative editing
-                  </label>
-                </>
+                <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)}>
+                  <option value="draft">Draft</option>
+                  <option value="published">Published</option>
+                </select>
               )}
               <button className="btn btn-primary btn-sm" onClick={saveEdit} disabled={saving}>
                 <FiSave /> {saving ? 'Saving...' : 'Save'}
@@ -358,7 +343,7 @@ export default function BlogDetailPage() {
 
       {/* Content */}
       <div className="detail-content">
-        {editing && editCollabEnabled ? (
+        {editing ? (
           <CollaborativeEditor
             key={blogId}
             blogId={blogId!}
@@ -367,13 +352,6 @@ export default function BlogDetailPage() {
             username={user?.username || undefined}
             onContentChange={(html) => setEditContent(html)}
             initialContent={editContent}
-          />
-        ) : editing ? (
-          <textarea
-            className="edit-content-textarea"
-            value={editContent}
-            onChange={(e) => setEditContent(e.target.value)}
-            rows={15}
           />
         ) : (
           blog.content
