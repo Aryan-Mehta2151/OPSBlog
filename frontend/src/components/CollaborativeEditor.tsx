@@ -41,6 +41,7 @@ function CollaborativeEditorInner({
 	isSynced: boolean;
 }) {
 	const colorRef = useRef(randomColor());
+	const seededRef = useRef(false);
 	const { ydoc, provider } = session;
 
 	const editor = useEditor({
@@ -57,34 +58,24 @@ function CollaborativeEditorInner({
 		},
 	});
 
+	// Only seed content once when sync completes
 	useEffect(() => {
-		if (!editor || !initialContent) return;
+		if (!editor || !initialContent || seededRef.current) return;
 
 		const seedIfEmpty = () => {
 			const html = editor.getHTML().trim();
 			const isVisuallyEmpty = editor.isEmpty || html === '<p></p>' || html === '<p></p><p></p>';
 			if (isVisuallyEmpty) {
 				editor.commands.setContent(initialContent, false);
+				seededRef.current = true;
 			}
 		};
 
-		if (provider.synced) {
+		// Only seed once when sync is confirmed
+		if (isSynced) {
 			seedIfEmpty();
-			return;
 		}
-
-		const handleSync = (synced: boolean) => {
-			if (synced) seedIfEmpty();
-		};
-		provider.on('sync', handleSync);
-
-		const timer = setTimeout(seedIfEmpty, 500);
-
-		return () => {
-			provider.off('sync', handleSync);
-			clearTimeout(timer);
-		};
-	}, [editor, initialContent, provider]);
+	}, [editor, initialContent, isSynced]);
 
 	return (
 		<div className="collab-editor">
@@ -133,15 +124,9 @@ export default function CollaborativeEditor({
 		provider.on('status', handleStatus);
 		provider.on('sync', handleSyncState);
 
-		const poll = setInterval(() => {
-			setWsStatus(provider.wsconnected ? 'connected' : 'connecting');
-			setIsSynced(Boolean(provider.synced));
-		}, 250);
-
 		return () => {
 			provider.off('status', handleStatus);
 			provider.off('sync', handleSyncState);
-			clearInterval(poll);
 			provider.destroy();
 			ydoc.destroy();
 			setSession(null);
