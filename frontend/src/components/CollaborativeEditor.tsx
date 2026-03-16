@@ -63,10 +63,15 @@ function CollaborativeEditorInner({
 		if (!editor || !initialContent || seededRef.current) return;
 
 		const seedIfEmpty = () => {
-			const html = editor.getHTML().trim();
-			const isVisuallyEmpty = editor.isEmpty || html === '<p></p>' || html === '<p></p><p></p>';
-			if (isVisuallyEmpty) {
+			// Check if Yjs document already has content
+			const ytext = ydoc.getText('shared');
+			const hasYjsContent = ytext.length > 0;
+			
+			if (!hasYjsContent) {
 				editor.commands.setContent(initialContent, false);
+				seededRef.current = true;
+			} else {
+				// Mark as seeded even if there's existing content
 				seededRef.current = true;
 			}
 		};
@@ -75,7 +80,7 @@ function CollaborativeEditorInner({
 		if (isSynced) {
 			seedIfEmpty();
 		}
-	}, [editor, initialContent, isSynced]);
+	}, [editor, initialContent, isSynced, ydoc]);
 
 	return (
 		<div className="collab-editor">
