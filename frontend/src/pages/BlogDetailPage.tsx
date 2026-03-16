@@ -111,6 +111,7 @@ export default function BlogDetailPage() {
       setBlog(res.data);
       setEditing(false);
       notifySuccess('Blog updated');
+      navigate('/');
     } catch (err: any) {
       const msg = getApiErrorMessage(err, 'Failed to update blog');
       setError(msg);
