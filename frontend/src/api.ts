@@ -17,8 +17,6 @@ export function handleSessionExpired() {
   }
 }
 
-// In dev: '/api' proxied by Vite to localhost:8000
-// In prod: '' (same origin, served by FastAPI)
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').trim() || '/api';
 
 const api = axios.create({
@@ -108,7 +106,7 @@ api.interceptors.response.use(
 
 // ─── Auth ───
 export const authApi = {
-  signup: (data: { email: string; password: string; organization: string }) =>
+  signup: (data: { email: string; password: string; username: string; organization: string }) =>
     api.post('/auth/signup', data),
   login: (data: { email: string; password: string; organization: string }) =>
     api.post('/auth/login', data),
@@ -120,11 +118,11 @@ export const blogsApi = {
   list: () => api.get('/blogs/', { params: { _ts: Date.now() } }),
   changes: () => api.get('/blogs/changes', { params: { _ts: Date.now() } }),
   get: (id: string) => api.get(`/blogs/${id}`),
-  create: (data: { title: string; content?: string }) =>
+  create: (data: { title: string; content?: string; collab_enabled?: boolean }) =>
     api.post('/blogs/', data),
   importFromUrl: (data: { url: string; detail_level?: string; output_mode?: string }) =>
     api.post('/blogs/import-from-url', data),
-  update: (id: string, data: { title?: string; content?: string; status?: string }) =>
+  update: (id: string, data: { title?: string; content?: string; status?: string; collab_enabled?: boolean }) =>
     api.put(`/blogs/${id}`, data),
   delete: (id: string) => api.delete(`/blogs/${id}`),
 };
@@ -171,3 +169,18 @@ export const searchApi = {
 };
 
 export default api;
+
+// ─── Invites ───
+export const invitesApi = {
+  send: (data: { recipient_id?: string; recipient_username: string; blog_id: string }) =>
+    api.post('/invites/', data),
+  received: () => api.get('/invites/received'),
+  sent: () => api.get('/invites/sent'),
+  unreadCount: () => api.get('/invites/unread-count'),
+  orgUsers: () => api.get('/invites/org-users'),
+  accept: (id: string) => api.patch(`/invites/${id}/accept`),
+  reject: (id: string) => api.patch(`/invites/${id}/reject`),
+  cancel: (id: string) => api.patch(`/invites/${id}/cancel`),
+  removeCollaborator: (inviteId: string) => api.delete(`/invites/${inviteId}/collaborator`),
+  blogCollaborators: (blogId: string) => api.get(`/invites/blog/${blogId}/collaborators`),
+};

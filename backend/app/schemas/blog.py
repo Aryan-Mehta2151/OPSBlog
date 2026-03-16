@@ -5,6 +5,7 @@ from datetime import datetime
 class BlogCreateRequest(BaseModel):
     title: str
     content: str = ""
+    collab_enabled: bool = True
 
 
 class BlogImportRequest(BaseModel):
@@ -24,13 +25,16 @@ class BlogUpdateRequest(BaseModel):
     title: str | None = None
     content: str | None = None
     status: str | None = None  # "draft" / "published"
+    collab_enabled: bool | None = None
 
 class BlogResponse(BaseModel):
     id: str
     title: str
     content: str
     status: str
+    collab_enabled: bool
     author_id: str
+    author_username: str | None = None
     org_id: str
     created_at: datetime
     updated_at: datetime
@@ -42,7 +46,9 @@ class BlogListResponse(BaseModel):
     id: str
     title: str
     status: str
+    collab_enabled: bool
     author_id: str
+    author_username: str | None = None
     created_at: datetime
     updated_at: datetime
 

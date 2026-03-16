@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { blogsApi, pdfsApi, imagesApi } from '../api';
+import { blogsApi, pdfsApi, imagesApi, invitesApi } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { FiEdit, FiTrash2, FiUpload, FiFile, FiImage, FiSave, FiX, FiEye, FiExternalLink } from 'react-icons/fi';
 import { getApiErrorMessage, notifyError, notifySuccess } from '../utils/toast';
+import CollaborativeEditor from '../components/CollaborativeEditor';
 import './BlogDetail.css';
 
 interface Blog {
@@ -11,7 +12,9 @@ interface Blog {
   title: string;
   content: string;
   status: string;
+  collab_enabled: boolean;
   author_id: string;
+  author_username: string | null;
   org_id: string;
   created_at: string;
   updated_at: string;
@@ -31,6 +34,12 @@ interface ImageDoc {
   uploaded_at: string;
 }
 
+interface Collaborator {
+  id: string;
+  username: string | null;
+  email: string;
+}
+
 export default function BlogDetailPage() {
   const { blogId } = useParams<{ blogId: string }>();
   const navigate = useNavigate();
@@ -47,6 +56,7 @@ export default function BlogDetailPage() {
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
   const [editStatus, setEditStatus] = useState('');
+  const [editCollabEnabled, setEditCollabEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
 
   // Upload state
@@ -54,21 +64,27 @@ export default function BlogDetailPage() {
   const [viewingPdfId, setViewingPdfId] = useState<string | null>(null);
   const [viewingImageId, setViewingImageId] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<{ name: string; url: string } | null>(null);
+  const [isCollaborator, setIsCollaborator] = useState(false);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
 
   const isAuthor = blog?.author_id === user?.id;
+  const canEdit = Boolean(isAuthor || (isCollaborator && blog?.collab_enabled));
+  const canManageAttachments = canEdit;
 
   const fetchBlog = async () => {
     try {
-      const [blogRes, pdfRes, imgRes] = await Promise.all([
+      const [blogRes, pdfRes, imgRes, collabRes] = await Promise.all([
         blogsApi.get(blogId!),
         pdfsApi.list(blogId!),
         imagesApi.list(blogId!),
+        invitesApi.blogCollaborators(blogId!),
       ]);
       setBlog(blogRes.data);
       setPdfs(pdfRes.data);
       setImages(imgRes.data);
+      const collaborators = Array.isArray(collabRes.data) ? (collabRes.data as Collaborator[]) : [];
+      setIsCollaborator(collaborators.some((c) => c.id === user?.id));
     } catch (err: any) {
       const msg = getApiErrorMessage(err, 'Failed to load blog');
       setError(msg);
@@ -91,10 +107,11 @@ export default function BlogDetailPage() {
   }, [imagePreview]);
 
   const startEdit = () => {
-    if (!blog) return;
+    if (!blog || !canEdit) return;
     setEditTitle(blog.title);
     setEditContent(blog.content);
     setEditStatus(blog.status);
+    setEditCollabEnabled(Boolean(blog.collab_enabled));
     setEditing(true);
   };
 
@@ -103,11 +120,22 @@ export default function BlogDetailPage() {
   const saveEdit = async () => {
     setSaving(true);
     try {
-      const res = await blogsApi.update(blogId!, {
+      const payload: {
+        title: string;
+        content: string;
+        status?: string;
+        collab_enabled?: boolean;
+      } = {
         title: editTitle,
         content: editContent,
-        status: editStatus,
-      });
+      };
+
+      if (isAuthor) {
+        payload.status = editStatus;
+        payload.collab_enabled = editCollabEnabled;
+      }
+
+      const res = await blogsApi.update(blogId!, payload);
       setBlog(res.data);
       setEditing(false);
       notifySuccess('Blog updated');
@@ -280,17 +308,32 @@ export default function BlogDetailPage() {
       <div className="detail-meta">
         Created: {new Date(blog.created_at).toLocaleString()}
         {blog.updated_at && <> &middot; Updated: {new Date(blog.updated_at).toLocaleString()}</>}
+        {blog.author_username && (
+          <> &middot; <span className="blog-author-tag">by @{blog.author_username}</span></>
+        )}
       </div>
 
       {/* Actions */}
-      {isAuthor && (
+      {canEdit && (
         <div className="detail-actions">
           {editing ? (
             <>
-              <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)}>
-                <option value="draft">Draft</option>
-                <option value="published">Published</option>
-              </select>
+              {isAuthor && (
+                <>
+                  <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)}>
+                    <option value="draft">Draft</option>
+                    <option value="published">Published</option>
+                  </select>
+                  <label className="collab-toggle">
+                    <input
+                      type="checkbox"
+                      checked={editCollabEnabled}
+                      onChange={(e) => setEditCollabEnabled(e.target.checked)}
+                    />
+                    Enable collaborative editing
+                  </label>
+                </>
+              )}
               <button className="btn btn-primary btn-sm" onClick={saveEdit} disabled={saving}>
                 <FiSave /> {saving ? 'Saving...' : 'Save'}
               </button>
@@ -303,9 +346,11 @@ export default function BlogDetailPage() {
               <button className="btn btn-secondary btn-sm" onClick={startEdit}>
                 <FiEdit /> Edit
               </button>
-              <button className="btn btn-danger btn-sm" onClick={handleDelete}>
-                <FiTrash2 /> Delete
-              </button>
+              {isAuthor && (
+                <button className="btn btn-danger btn-sm" onClick={handleDelete}>
+                  <FiTrash2 /> Delete
+                </button>
+              )}
             </>
           )}
         </div>
@@ -313,7 +358,17 @@ export default function BlogDetailPage() {
 
       {/* Content */}
       <div className="detail-content">
-        {editing ? (
+        {editing && editCollabEnabled ? (
+          <CollaborativeEditor
+            key={blogId}
+            blogId={blogId!}
+            token={localStorage.getItem('token') || ''}
+            userEmail={user?.email || ''}
+            username={user?.username || undefined}
+            onContentChange={(html) => setEditContent(html)}
+            initialContent={editContent}
+          />
+        ) : editing ? (
           <textarea
             className="edit-content-textarea"
             value={editContent}
@@ -321,7 +376,9 @@ export default function BlogDetailPage() {
             rows={15}
           />
         ) : (
-          <div className="blog-body">{blog.content || <em>No content yet.</em>}</div>
+          blog.content
+            ? <div className="blog-body" dangerouslySetInnerHTML={{ __html: blog.content }} />
+            : <div className="blog-body"><em>No content yet.</em></div>
         )}
       </div>
 
@@ -332,7 +389,7 @@ export default function BlogDetailPage() {
           <div className="attachment-group">
             <div className="attachment-header">
               <h3><FiFile /> PDFs ({pdfs.length})</h3>
-              {isAuthor && (
+              {canManageAttachments && (
                 <>
                   <input
                     ref={pdfInputRef}
@@ -367,7 +424,7 @@ export default function BlogDetailPage() {
                     >
                       <FiExternalLink /> {viewingPdfId === pdf.id ? 'Opening...' : 'View'}
                     </button>
-                    {isAuthor && (
+                    {canManageAttachments && (
                       <button type="button" className="btn-icon-danger" onClick={() => handleDeletePdf(pdf.id)}>
                         <FiTrash2 />
                       </button>
@@ -382,7 +439,7 @@ export default function BlogDetailPage() {
           <div className="attachment-group">
             <div className="attachment-header">
               <h3><FiImage /> Images ({images.length})</h3>
-              {isAuthor && (
+              {canManageAttachments && (
                 <>
                   <input
                     ref={imgInputRef}
@@ -417,7 +474,7 @@ export default function BlogDetailPage() {
                     >
                       <FiEye /> {viewingImageId === img.id ? 'Opening...' : 'View'}
                     </button>
-                    {isAuthor && (
+                    {canManageAttachments && (
                       <button type="button" className="btn-icon-danger" onClick={() => handleDeleteImage(img.id)}>
                         <FiTrash2 />
                       </button>

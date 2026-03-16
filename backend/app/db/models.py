@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy import (
     Column,
     String,
+    Boolean,
     DateTime,
     ForeignKey,
     Text,
@@ -24,6 +25,7 @@ class User(Base):
 
     id = Column(String, primary_key=True, default=uid)
     email = Column(String, unique=True, index=True, nullable=False)
+    username = Column(String, unique=True, index=True, nullable=True)
     password_hash = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -96,11 +98,17 @@ class BlogPost(Base):
     title = Column(String, nullable=False)
     content = Column(Text, nullable=False, default="")
     status = Column(String, nullable=False, default="draft")  # "draft" / "published"
+    collab_enabled = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    ydoc_updates = Column(Text, nullable=True)  # JSON array of hex-encoded Yjs updates
 
     org = relationship("Organization", back_populates="blogs")
     author = relationship("User")
+
+    @property
+    def author_username(self):
+        return self.author.username if self.author else None
 
 class PdfDocument(Base):
     __tablename__ = "pdf_documents"
@@ -124,6 +132,27 @@ class ImageDocument(Base):
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     blog = relationship("BlogPost", backref="images")
+
+
+class CollabInvite(Base):
+    __tablename__ = "collab_invites"
+    __table_args__ = (
+        UniqueConstraint("blog_id", "recipient_id", "status", name="uq_invite_blog_recipient_pending"),
+    )
+
+    id = Column(String, primary_key=True, default=uid)
+    sender_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipient_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    blog_id = Column(String, ForeignKey("blog_posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(String, nullable=False, default="pending")  # pending/accepted/rejected/cancelled
+    recipient_read = Column(Boolean, nullable=False, default=False)
+    sender_read = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    sender = relationship("User", foreign_keys=[sender_id])
+    recipient = relationship("User", foreign_keys=[recipient_id])
+    blog = relationship("BlogPost")
 
 
 class SearchConversation(Base):

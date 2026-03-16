@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import os
 from app.core.deps import get_db, get_current_user
-from app.db.models import ImageDocument, BlogPost, User, Membership
+from app.db.models import ImageDocument, BlogPost, User, Membership, CollabInvite
 from app.services.vector_service import vector_service
 
 router = APIRouter(prefix="/images", tags=["images"])
@@ -24,15 +24,24 @@ def get_single_org_membership(user: User, db: Session):
         )
     return memberships[0]
 
-def verify_author_or_admin(user: User, blog: BlogPost, db: Session):
-    """Verify user is the author or an admin of the blog's organization"""
+def verify_author_admin_or_collaborator(user: User, blog: BlogPost, db: Session):
+    """Verify user is author, org admin, or accepted collaborator when collab is enabled."""
     if blog.author_id == user.id:
         return
+
+    accepted_invite = db.query(CollabInvite).filter(
+        CollabInvite.blog_id == blog.id,
+        CollabInvite.recipient_id == user.id,
+        CollabInvite.status == "accepted",
+    ).first()
+    if accepted_invite and blog.collab_enabled:
+        return
+
     membership = get_single_org_membership(user, db)
     if membership.org_id != blog.org_id or membership.role != "Admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the author or org admins can upload images for this blog"
+            detail="Only the author, accepted collaborators, or org admins can manage images for this blog"
         )
 
 def verify_org_member(user: User, blog: BlogPost, db: Session):
@@ -66,7 +75,7 @@ def upload_image(
         raise HTTPException(status_code=400, detail="Can only upload images to published blog posts")
 
     # Verify permissions
-    verify_author_or_admin(current_user, blog, db)
+    verify_author_admin_or_collaborator(current_user, blog, db)
 
     # Validate file type — check extension first, fall back to MIME type
     # (mobile browsers may send images without proper extensions)
@@ -200,7 +209,7 @@ def delete_image(
         raise HTTPException(status_code=404, detail="Blog post not found")
 
     # Verify permissions
-    verify_author_or_admin(current_user, blog, db)
+    verify_author_admin_or_collaborator(current_user, blog, db)
 
     # Delete file from disk
     try:

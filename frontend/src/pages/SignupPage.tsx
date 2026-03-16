@@ -10,6 +10,7 @@ const ORGS = ['Google', 'Amazon', 'Meta'];
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [organization, setOrganization] = useState(ORGS[0]);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -33,7 +34,7 @@ export default function SignupPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await authApi.signup({ email, password, organization });
+      const res = await authApi.signup({ email, password, username, organization });
       await login(res.data.access_token, res.data.refresh_token);
       notifySuccess('Account created successfully');
       navigate('/');
@@ -66,6 +67,16 @@ export default function SignupPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+          />
+          <label>Username</label>
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            minLength={3}
+            maxLength={30}
+            placeholder="e.g. john_doe"
           />
           <label>Password</label>
           <input

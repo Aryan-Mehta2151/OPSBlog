@@ -41,6 +41,15 @@ const buildConversationTitle = (query: string) => {
   return `${normalized.slice(0, 40).trim()}...`;
 };
 
+const htmlToPlain = (value: string | undefined | null) => {
+  if (!value) return '';
+  return value
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
 export default function SearchPage() {
   const { isAdmin, user, loading } = useAuth();
 
@@ -507,7 +516,7 @@ export default function SearchPage() {
                   <div className="chunk-meta">
                     Type: {chunk.metadata?.type || 'text'} &middot; Blog: {chunk.metadata?.title || 'Unknown'}
                   </div>
-                  <div className="chunk-text">{chunk.text?.substring(0, 200)}...</div>
+                  <div className="chunk-text">{htmlToPlain(chunk.text).substring(0, 200)}...</div>
                 </div>
               ))}
             </div>

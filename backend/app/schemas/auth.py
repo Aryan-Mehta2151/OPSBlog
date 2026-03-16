@@ -9,11 +9,21 @@ class OrganizationEnum(str, Enum):
 class SignupRequest(BaseModel):
     email: EmailStr
     password: str
+    username: str
     organization: OrganizationEnum
 
     @field_validator("email")
     def normalize_email(cls, v):
         return v.lower().strip()
+    
+    @field_validator("username")
+    def normalize_username(cls, v):
+        v = v.strip()
+        if len(v) < 3:
+            raise ValueError("Username must be at least 3 characters")
+        if not v.replace("_", "").replace("-", "").replace(".", "").isalnum():
+            raise ValueError("Username may only contain letters, numbers, underscores, hyphens and dots")
+        return v.lower()
     
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -37,6 +47,7 @@ class UserResponse(BaseModel):
 class UserWithOrgResponse(BaseModel):
     id: str
     email: str
+    username: str | None = None
     organizations: list[dict] = []
 
     class Config:

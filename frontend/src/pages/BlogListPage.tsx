@@ -11,6 +11,7 @@ interface Blog {
   title: string;
   status: string;
   author_id: string;
+  author_username: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -164,6 +165,9 @@ export default function BlogListPage() {
         <span><FiClock /> {new Date(blog.created_at).toLocaleDateString()}</span>
         {blog.updated_at && (
           <span><FiEdit /> {new Date(blog.updated_at).toLocaleDateString()}</span>
+        )}
+        {blog.author_username && (
+          <span className="blog-card-author">by @{blog.author_username}</span>
         )}
       </div>
     </Link>

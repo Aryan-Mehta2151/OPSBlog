@@ -24,6 +24,11 @@
   margin-bottom: 1rem;
 }
 
+.blog-author-tag {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
 .detail-actions {
   display: flex;
   gap: 0.5rem;
@@ -42,6 +47,18 @@
   color: var(--color-text);
 }
 
+.collab-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+.collab-toggle input {
+  accent-color: var(--color-primary);
+}
+
 .detail-content {
   margin-bottom: 2rem;
 }
@@ -50,6 +67,21 @@
   line-height: 1.7;
   color: var(--color-text);
   white-space: pre-wrap;
+}
+
+.blog-body p,
+.blog-body h1,
+.blog-body h2,
+.blog-body h3,
+.blog-body ul,
+.blog-body ol,
+.blog-body blockquote {
+  margin-bottom: 0.75rem;
+}
+
+.blog-body ul,
+.blog-body ol {
+  padding-left: 1.5rem;
 }
 
 .edit-title-input {
@@ -84,6 +116,85 @@
 
 .edit-content-textarea:focus {
   border-color: var(--color-primary);
+}
+
+.collab-editor {
+  width: 100%;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font-size: 0.95rem;
+  font-family: inherit;
+  line-height: 1.6;
+  min-height: 300px;
+}
+
+.collab-editor-status {
+  font-size: 0.78rem;
+  color: var(--color-text-faint);
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.45rem 0.75rem;
+}
+
+.collab-editor .ProseMirror {
+  padding: 0.75rem;
+  min-height: 300px;
+  outline: none;
+}
+
+.collab-editor .ProseMirror p {
+  margin-bottom: 0.6rem;
+}
+
+.collab-editor .ProseMirror h1,
+.collab-editor .ProseMirror h2,
+.collab-editor .ProseMirror h3 {
+  margin: 0.75rem 0 0.4rem;
+  font-weight: 700;
+}
+
+.collab-editor .ProseMirror ul,
+.collab-editor .ProseMirror ol {
+  padding-left: 1.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.collab-editor .ProseMirror blockquote {
+  border-left: 3px solid var(--color-border-strong);
+  padding-left: 0.75rem;
+  color: var(--color-text-faint);
+  margin: 0.5rem 0;
+}
+
+.collab-editor .ProseMirror code {
+  background: var(--color-surface);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-size: 0.88em;
+}
+
+.collaboration-cursor__caret {
+  position: relative;
+  border-left: 2px solid;
+  margin-left: -1px;
+  margin-right: -1px;
+  word-break: normal;
+  pointer-events: none;
+}
+
+.collaboration-cursor__label {
+  position: absolute;
+  top: -1.4em;
+  left: -1px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #fff;
+  padding: 1px 4px;
+  border-radius: 3px;
+  pointer-events: none;
+  user-select: none;
 }
 
 .blog-form {

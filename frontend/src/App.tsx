@@ -7,6 +7,8 @@ import BlogListPage from './pages/BlogListPage';
 import BlogCreatePage from './pages/BlogCreatePage';
 import BlogDetailPage from './pages/BlogDetailPage';
 import SearchPage from './pages/SearchPage';
+import InvitesPage from './pages/InvitesPage';
+import SendInvitePage from './pages/SendInvitePage';
 import { ToastContainer } from 'react-toastify';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -32,6 +34,8 @@ function AppRoutes() {
       <Route path="/blogs/new" element={<ProtectedRoute><BlogCreatePage /></ProtectedRoute>} />
       <Route path="/blogs/:blogId" element={<ProtectedRoute><BlogDetailPage /></ProtectedRoute>} />
       <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
+      <Route path="/invites" element={<ProtectedRoute><InvitesPage /></ProtectedRoute>} />
+      <Route path="/invites/send" element={<ProtectedRoute><SendInvitePage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

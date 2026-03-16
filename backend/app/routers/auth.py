@@ -25,7 +25,10 @@ def signup(data: SignupRequest, db: Session = Depends(get_db)):
     # 2) Find or create the user
     user = db.query(User).filter(User.email == email).first()
     if not user:
-        user = User(email=email, password_hash=hash_password(data.password))
+        # Check username uniqueness
+        if db.query(User).filter(User.username == data.username).first():
+            raise HTTPException(status_code=400, detail="Username already taken")
+        user = User(email=email, username=data.username, password_hash=hash_password(data.password))
         db.add(user)
         db.flush()
     else:
@@ -111,5 +114,6 @@ def get_current_user_info(current_user: User = Depends(get_current_user), db: Se
     return UserWithOrgResponse(
         id=current_user.id,
         email=current_user.email,
+        username=current_user.username,
         organizations=organizations,
     )
