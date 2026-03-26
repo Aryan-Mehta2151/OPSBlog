@@ -10,7 +10,7 @@ from sqlalchemy import text
 from app.core.deps import get_db
 from app.db.session import engine
 from app.db.models import Base
-from app.routers import auth, blogs, vector_search, pdfs, images
+from app.routers import auth, blogs, vector_search, pdfs, images, documents
 
 
 app = FastAPI(title="OpsBlog (Multi-tenant)")
@@ -30,6 +30,7 @@ app.include_router(blogs.router, prefix="/api")
 app.include_router(vector_search.router, prefix="/api")
 app.include_router(pdfs.router, prefix="/api")
 app.include_router(images.router, prefix="/api")
+app.include_router(documents.router, prefix="/api")
 
 @app.get("/health")
 def health():

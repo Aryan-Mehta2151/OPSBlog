@@ -155,6 +155,29 @@ export const imagesApi = {
     api.delete(`/images/blogs/${blogId}/images/${imageId}`),
 };
 
+// ─── Documents (unified knowledge-base API) ───
+export const documentsApi = {
+  list: () => api.get('/documents'),
+  addText: (data: { title: string; content: string }) => api.post('/documents/text', data),
+  addPdf: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/documents/pdf', form);
+  },
+  addImage: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/documents/image', form);
+  },
+  viewPdf: (blogId: string, pdfId: string) =>
+    api.get(`/documents/pdf/${blogId}/${pdfId}/view`, { responseType: 'blob' }),
+  viewImage: (blogId: string, imageId: string) =>
+    api.get(`/documents/image/${blogId}/${imageId}/view`, { responseType: 'blob' }),
+  deleteText: (blogId: string) => api.delete(`/documents/text/${blogId}`),
+  deletePdf: (pdfId: string) => api.delete(`/documents/pdf/${pdfId}`),
+  deleteImage: (imageId: string) => api.delete(`/documents/image/${imageId}`),
+};
+
 // ─── Search ───
 export const searchApi = {
   index: () => api.post('/search/index'),
