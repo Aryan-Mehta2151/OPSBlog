@@ -1,6 +1,9 @@
 import os
 from io import BytesIO
 import base64
+import uuid
+import re
+from typing import Optional
 import chromadb
 from langchain_text_splitters import RecursiveCharacterTextSplitter  # type: ignore
 from sqlalchemy.orm import Session
@@ -25,6 +28,96 @@ OPENAI_IMAGE_VISION_MODEL = os.getenv("OPENAI_IMAGE_VISION_MODEL", "gpt-4o")
 OPENAI_PDF_VISION_MODEL = os.getenv("OPENAI_PDF_VISION_MODEL", "gpt-4o")
 PDF_VISION_MAX_PAGES = _get_env_int("PDF_VISION_MAX_PAGES", 25)
 PDF_VISION_MAX_IMAGES = _get_env_int("PDF_VISION_MAX_IMAGES", 30)
+
+IMAGE_RETRIEVAL_VISION_PROMPT = """
+You are generating retrieval text for one image.
+
+Return plain text in this exact section format:
+Primary Subject:
+- Identify the main subject using specific names when possible (for example: zebra, tarsier, bald eagle, spiral galaxy, city skyline).
+
+Secondary Subjects:
+- List other visible entities and objects.
+
+Category Signals:
+- Domain: choose one most likely domain from wildlife, space, city, document, chart, product, people, other.
+- Include 5-15 concise keywords that help search matching.
+
+Visible Text (OCR):
+- Transcribe readable text exactly. Keep uncertain text with [uncertain: ...].
+
+Scene and Attributes:
+- Describe pose, color, count, location cues, background context, and relationships between entities.
+
+Structured Facts:
+- Key values, labels, numbers, table-like values, axes, legends, signs, timestamps, brand names, species names.
+
+Disambiguation:
+- Mention near-confusions (for example leopard vs cheetah) and why the best guess was chosen.
+
+Rules:
+- Be factual and literal; do not invent hidden details.
+- Prefer specific nouns over generic words.
+- Keep output dense for search quality.
+""".strip()
+
+PDF_PAGE_VISION_PROMPT = """
+Extract high-fidelity text and layout semantics from this PDF page for retrieval.
+
+Return plain text with these sections:
+Headings:
+Body Text:
+Lists and Bullets:
+Tables and Key-Value Pairs:
+Named Entities (people, orgs, places, products):
+Numbers and Units:
+
+Rules:
+- Preserve wording and numbers exactly when readable.
+- Keep reading order as much as possible.
+- Mark uncertain reads with [uncertain: ...].
+- Do not summarize away details.
+""".strip()
+
+PDF_EMBEDDED_IMAGE_VISION_PROMPT = """
+Describe this PDF-embedded image for retrieval.
+
+Return plain text with these sections:
+Primary Subject:
+Secondary Subjects:
+Chart/Diagram Type (if applicable):
+Visible Text and Labels:
+Important Values and Relationships:
+Keywords:
+
+Rules:
+- Be specific and literal.
+- Extract text exactly where possible.
+- Include domain clues (for example wildlife, astronomy, urban, medical, finance).
+- Mark uncertain reads with [uncertain: ...].
+""".strip()
+
+IMAGE_DOMAIN_KEYWORDS = {
+    "wildlife": {
+        "wildlife", "animal", "animals", "bird", "birds", "mammal", "reptile", "amphibian",
+        "cheetah", "zebra", "lion", "tiger", "elephant", "bear", "monkey", "gorilla", "ape",
+        "deer", "fox", "wolf", "otter", "whale", "dolphin", "shark", "eagle", "owl", "tarsier",
+    },
+    "space": {
+        "space", "galaxy", "nebula", "planet", "planets", "moon", "star", "stars", "cosmos",
+        "astronomy", "satellite", "rocket", "astronaut", "milky", "universe", "lunar", "solar",
+    },
+    "city": {
+        "city", "cities", "urban", "skyline", "street", "building", "buildings", "downtown",
+        "traffic", "metropolitan", "skyscraper", "architecture", "bridge", "avenue", "tower",
+    },
+}
+
+IMAGE_TAG_STOPWORDS = {
+    "the", "and", "for", "with", "that", "this", "from", "into", "about", "your", "image",
+    "images", "photo", "picture", "blog", "content", "description", "text", "visible", "label",
+    "table", "value", "values", "entity", "entities", "extract", "extracted", "shows", "showing",
+}
 try:
     import pytesseract
     from PIL import Image
@@ -409,7 +502,7 @@ class VectorService:
                                 "content": [
                                     {
                                         "type": "text",
-                                        "text": "Extract all readable text from this PDF page. Preserve key fields, names, headings, numbers and bullet points. Return plain text only."
+                                        "text": PDF_PAGE_VISION_PROMPT
                                     },
                                     {
                                         "type": "image_url",
@@ -483,7 +576,7 @@ class VectorService:
                                     "content": [
                                         {
                                             "type": "text",
-                                            "text": "Describe this PDF-embedded image in detail and extract any visible text, labels, tables, values, names, and key entities. Return concise structured plain text."
+                                            "text": PDF_EMBEDDED_IMAGE_VISION_PROMPT
                                         },
                                         {
                                             "type": "image_url",
@@ -515,6 +608,97 @@ class VectorService:
         except Exception as e:
             print(f"PDF embedded-image vision extraction failed for {file_path}: {e}")
             return ""
+
+    def _extract_embedded_pdf_images_to_documents(self, pdf_doc: PdfDocument, db: Session) -> List[ImageDocument]:
+        """Persist embedded PDF images as ImageDocument rows so they can be retrieved and shown in chat."""
+        extracted_docs: List[ImageDocument] = []
+        doc = None
+        filename_prefix = f"pdfembed_{pdf_doc.id}_"
+
+        try:
+            # Clear previously extracted images for this PDF to avoid duplication on re-index.
+            existing_docs = (
+                db.query(ImageDocument)
+                .filter(
+                    ImageDocument.blog_id == pdf_doc.blog_id,
+                    ImageDocument.filename.like(f"{filename_prefix}%"),
+                )
+                .all()
+            )
+            for existing in existing_docs:
+                try:
+                    if os.path.exists(existing.file_path):
+                        os.remove(existing.file_path)
+                except Exception as remove_err:
+                    print(f"Failed removing stale extracted image {existing.file_path}: {remove_err}")
+                db.delete(existing)
+            if existing_docs:
+                db.commit()
+
+            doc = fitz.open(pdf_doc.file_path)
+            upload_root = os.getenv("UPLOAD_DIR", "uploads")
+            image_dir = os.path.join(upload_root, "images")
+            os.makedirs(image_dir, exist_ok=True)
+
+            processed_images = 0
+            for page_idx in range(len(doc)):
+                page = doc[page_idx]
+                page_images = page.get_images(full=True)
+
+                for img_idx, img in enumerate(page_images):
+                    if processed_images >= PDF_VISION_MAX_IMAGES:
+                        break
+
+                    try:
+                        xref = img[0]
+                        base_image = doc.extract_image(xref)
+                        image_bytes = base_image.get("image")
+                        if not image_bytes:
+                            continue
+
+                        ext = (base_image.get("ext") or "png").lower()
+                        if ext == "jpe":
+                            ext = "jpg"
+                        if ext not in {"png", "jpg", "jpeg", "webp", "gif", "bmp"}:
+                            ext = "png"
+
+                        filename = f"{filename_prefix}p{page_idx + 1}_i{img_idx + 1}.{ext}"
+                        disk_name = f"{pdf_doc.blog_id}_{uuid.uuid4().hex}_{filename}"
+                        file_path = os.path.join(image_dir, disk_name)
+
+                        with open(file_path, "wb") as f:
+                            f.write(image_bytes)
+
+                        image_doc = ImageDocument(
+                            blog_id=pdf_doc.blog_id,
+                            filename=filename,
+                            file_path=file_path,
+                        )
+                        db.add(image_doc)
+                        db.flush()
+                        extracted_docs.append(image_doc)
+                        processed_images += 1
+                    except Exception as image_err:
+                        print(f"Failed to persist PDF embedded image on page {page_idx + 1}: {image_err}")
+
+                if processed_images >= PDF_VISION_MAX_IMAGES:
+                    break
+
+            if extracted_docs:
+                db.commit()
+                print(f"Persisted {len(extracted_docs)} PDF embedded images for {pdf_doc.filename}")
+
+            return extracted_docs
+        except Exception as e:
+            db.rollback()
+            print(f"Failed extracting embedded PDF images for {pdf_doc.filename}: {e}")
+            return []
+        finally:
+            if doc is not None:
+                try:
+                    doc.close()
+                except Exception:
+                    pass
 
     def index_pdf(self, pdf_doc: PdfDocument, db: Session):
         """Index a PDF document for search"""
@@ -562,6 +746,18 @@ class VectorService:
 
         # Store in ChromaDB
         self.embed_and_store_chunks(chunks)
+
+        # Persist and index images embedded in this PDF so chat can surface the actual image.
+        embedded_images = self._extract_embedded_pdf_images_to_documents(pdf_doc, db)
+        for embedded_image in embedded_images:
+            self.index_image(
+                embedded_image,
+                db,
+                source_type="pdf_embedded_image",
+                source_pdf_id=pdf_doc.id,
+                source_pdf_filename=pdf_doc.filename,
+            )
+
         print(f"Indexed PDF: {pdf_doc.filename}")
 
     def describe_image_with_vision(self, file_path: str) -> str:
@@ -590,7 +786,7 @@ class VectorService:
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": "Describe this image in detail for retrieval. Extract all visible text exactly where possible, and summarize important entities, numbers, labels, tables, and relationships. Mention uncertain reads explicitly."},
+                            {"type": "text", "text": IMAGE_RETRIEVAL_VISION_PROMPT},
                             {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_data}"}}
                         ]
                     }
@@ -604,7 +800,45 @@ class VectorService:
             print(f"Vision description failed: {e}")
             return ""
 
-    def index_image(self, image_doc: ImageDocument, db: Session):
+    def _extract_image_tags(self, text: str, max_tags: int = 24) -> str:
+        tokens = re.findall(r"[a-z0-9]+", (text or "").lower())
+        deduped = []
+        seen = set()
+        for token in tokens:
+            if len(token) < 3 or token in IMAGE_TAG_STOPWORDS:
+                continue
+            if token in seen:
+                continue
+            seen.add(token)
+            deduped.append(token)
+            if len(deduped) >= max_tags:
+                break
+        return " ".join(deduped)
+
+    def _infer_image_domain(self, text: str) -> str:
+        haystack = (text or "").lower()
+        best_domain = "unknown"
+        best_score = 0
+
+        for domain, keywords in IMAGE_DOMAIN_KEYWORDS.items():
+            score = 0
+            for kw in keywords:
+                if kw in haystack:
+                    score += 1
+            if score > best_score:
+                best_score = score
+                best_domain = domain
+
+        return best_domain if best_score > 0 else "unknown"
+
+    def index_image(
+        self,
+        image_doc: ImageDocument,
+        db: Session,
+        source_type: str = "image",
+        source_pdf_id: str = None,
+        source_pdf_filename: str = None,
+    ):
         """Index an image document for search (with OCR + GPT-4 Vision)"""
         # Get blog and related info
         blog = db.query(BlogPost).filter(BlogPost.id == image_doc.blog_id).first()
@@ -632,38 +866,67 @@ class VectorService:
         # Use GPT-4 Vision to describe the image
         vision_description = self.describe_image_with_vision(image_doc.file_path)
 
-        # Create searchable text from image metadata, OCR text, and vision description
-        full_text = f"Image: {image_doc.filename}\nBlog: {blog.title}\nContent: {blog.content}"
+        # Create searchable text from image-centric metadata plus OCR/vision output.
+        # Do not include full blog body here; it can cause cross-image semantic bleed.
+        full_text = f"Image: {image_doc.filename}\nBlog: {blog.title}"
+        if source_pdf_filename:
+            full_text += f"\nSource PDF: {source_pdf_filename}"
         if vision_description:
             full_text += f"\nImage Description: {vision_description}"
         if extracted_text:
             full_text += f"\nExtracted Text: {extracted_text}"
+
+        image_profile_text = "\n".join([
+            str(image_doc.filename or ""),
+            str(blog.title or ""),
+            str(source_pdf_filename or ""),
+            str(vision_description or ""),
+            str(extracted_text or ""),
+        ])
+        image_domain = self._infer_image_domain(image_profile_text)
+        image_tags_text = self._extract_image_tags(image_profile_text)
 
         # Split into chunks
         text_chunks = self.text_splitter.split_text(full_text)
 
         chunks = []
         for i, chunk in enumerate(text_chunks):
+            metadata = {
+                "type": source_type,
+                "image_id": image_doc.id,
+                "blog_id": image_doc.blog_id,
+                "filename": image_doc.filename,
+                "title": blog.title,
+                "author_email": author.email if author else "Unknown",
+                "author_id": blog.author_id,
+                "org_name": org.name if org else "Unknown",
+                "org_id": blog.org_id,
+                "uploaded_at": image_doc.uploaded_at.isoformat() if image_doc.uploaded_at else None,
+                "has_ocr_text": bool(extracted_text),
+                "has_vision_description": bool(vision_description),
+                "total_chunks": len(text_chunks),
+                "image_domain": image_domain,
+                "image_tags_text": image_tags_text,
+            }
+            if source_pdf_id:
+                metadata["source_pdf_id"] = source_pdf_id
+            if source_pdf_filename:
+                metadata["source_pdf_filename"] = source_pdf_filename
+
             chunks.append({
                 "id": f"image_{image_doc.id}_chunk_{i}",
                 "blog_id": image_doc.blog_id,
                 "chunk_index": i,
                 "text": chunk,
-                "metadata": {
-                    "type": "image",
-                    "blog_id": image_doc.blog_id,
-                    "filename": image_doc.filename,
-                    "title": blog.title,
-                    "author_email": author.email if author else "Unknown",
-                    "author_id": blog.author_id,
-                    "org_name": org.name if org else "Unknown",
-                    "org_id": blog.org_id,
-                    "uploaded_at": image_doc.uploaded_at.isoformat() if image_doc.uploaded_at else None,
-                    "has_ocr_text": bool(extracted_text),
-                    "has_vision_description": bool(vision_description),
-                    "total_chunks": len(text_chunks)
-                }
+                "metadata": metadata
             })
+
+        # Replace any stale chunks for this same image id before re-adding.
+        try:
+            collection = self.client.get_collection(name="blog_posts", embedding_function=None)
+            collection.delete(where={"image_id": image_doc.id})
+        except Exception as e:
+            print(f"Could not clear existing chunks for image {image_doc.id}: {e}")
 
         # Store in ChromaDB (same collection as text)
         self.embed_and_store_chunks(chunks)
@@ -698,36 +961,26 @@ class VectorService:
 
         return results
 
-    def generate_answer(self, query: str, context_chunks: List[str], max_tokens: int = 500, detail_level: str = "normal") -> str:
+    def generate_answer(self, query: str, context_chunks: List[str], max_tokens: Optional[int] = None, detail_level: str = "normal") -> str:
         """Generate an answer using OpenAI based on retrieved context"""
         import os
         from openai import OpenAI
 
-        # Get OpenAI API key from environment
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             return "OpenAI API key not configured. Please set OPENAI_API_KEY environment variable."
 
         client = OpenAI(api_key=api_key)
-
-        # Combine context
         context = "\n\n".join(context_chunks)
 
-        # Detail-level specific instructions
         detail_instructions = {
             "brief": "Give a concise 2-3 sentence answer. Be direct and to the point.",
-            "normal": "Give a clear, well-structured answer with key details. Use a few paragraphs if needed.",
-            "detailed": "Give a comprehensive, in-depth answer covering all relevant information. Use paragraphs, bullet points, and examples where appropriate. Be thorough and detailed."
+            "normal": "Give a clear, natural answer in plain conversational prose. Use short paragraphs only.",
+            "detailed": "Give a comprehensive, natural answer in plain prose with fuller detail, while staying conversational and readable."
         }
         detail_instruction = detail_instructions.get(detail_level, detail_instructions["normal"])
 
-        system_msg = """You are a friendly AI assistant for a blog platform called OpsBlog.
-
-RULES:
-1. If the user sends a greeting (hi, hello, hey, etc.) or casual message, respond conversationally. Say hello and offer to help them search their blog content. Do NOT dump blog content for greetings.
-2. If the user asks a real question, answer it using ONLY the provided blog content.
-3. If the content includes "Extracted Text" from images, that is OCR text. If it includes "Image Description", use it to understand the image.
-4. If you cannot find relevant information in the content, say so honestly."""
+        system_msg = self._build_system_message()
 
         prompt = f"""RESPONSE STYLE: {detail_instruction}
 
@@ -736,21 +989,23 @@ USER MESSAGE: {query}
 BLOG CONTENT (use only if the user asks a real question):
 {context}"""
 
+        messages = self._build_messages(system_msg, prompt)
+
         try:
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": system_msg},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=max_tokens,
-                temperature=0.1
-            )
+            request_kwargs = {
+                "model": "gpt-4o",
+                "messages": messages,
+                "temperature": 0.1,
+            }
+            if max_tokens is not None and max_tokens > 0:
+                request_kwargs["max_tokens"] = max_tokens
+
+            response = client.chat.completions.create(**request_kwargs)
             return response.choices[0].message.content
         except Exception as e:
             return f"Sorry, I couldn't generate an answer at this time. Error: {str(e)}"
 
-    def generate_answer_stream(self, query: str, context_chunks: List[str], max_tokens: int = 500, detail_level: str = "normal"):
+    def generate_answer_stream(self, query: str, context_chunks: List[str], max_tokens: Optional[int] = None, detail_level: str = "normal"):
         """Stream an answer token-by-token using OpenAI's streaming API"""
         import os
         from openai import OpenAI
@@ -765,18 +1020,12 @@ BLOG CONTENT (use only if the user asks a real question):
 
         detail_instructions = {
             "brief": "Give a concise 2-3 sentence answer. Be direct and to the point.",
-            "normal": "Give a clear, well-structured answer with key details. Use a few paragraphs if needed.",
-            "detailed": "Give a comprehensive, in-depth answer covering all relevant information. Use paragraphs, bullet points, and examples where appropriate. Be thorough and detailed."
+            "normal": "Give a clear, natural answer in plain conversational prose. Use short paragraphs only.",
+            "detailed": "Give a comprehensive, natural answer in plain prose with fuller detail, while staying conversational and readable."
         }
         detail_instruction = detail_instructions.get(detail_level, detail_instructions["normal"])
 
-        system_msg = """You are a friendly AI assistant for a blog platform called OpsBlog.
-
-RULES:
-1. If the user sends a greeting (hi, hello, hey, etc.) or casual message, respond conversationally. Say hello and offer to help them search their blog content. Do NOT dump blog content for greetings.
-2. If the user asks a real question, answer it using ONLY the provided blog content.
-3. If the content includes "Extracted Text" from images, that is OCR text. If it includes "Image Description", use it to understand the image.
-4. If you cannot find relevant information in the content, say so honestly."""
+        system_msg = self._build_system_message()
 
         prompt = f"""RESPONSE STYLE: {detail_instruction}
 
@@ -785,23 +1034,54 @@ USER MESSAGE: {query}
 BLOG CONTENT (use only if the user asks a real question):
 {context}"""
 
+        messages = self._build_messages(system_msg, prompt)
+
         try:
-            stream = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": system_msg},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=max_tokens,
-                temperature=0.1,
-                stream=True,
-            )
+            request_kwargs = {
+                "model": "gpt-4o",
+                "messages": messages,
+                "temperature": 0.1,
+                "stream": True,
+            }
+            if max_tokens is not None and max_tokens > 0:
+                request_kwargs["max_tokens"] = max_tokens
+
+            stream = client.chat.completions.create(**request_kwargs)
             for chunk in stream:
                 delta = chunk.choices[0].delta
                 if delta.content:
                     yield delta.content
         except Exception as e:
             yield f"\nError: {str(e)}"
+
+    @staticmethod
+    def _build_system_message() -> str:
+        """Build the shared system message for LLM calls."""
+        return """You are a friendly AI assistant for a blog platform called OpsBlog. Users upload their OWN blog posts, PDFs, and images. Everything in the BLOG CONTENT below belongs to the user who is asking — it is THEIR content. You are simply helping them search and retrieve their own uploaded material. There are NO privacy concerns — the user owns all this content.
+
+RULES:
+1. If the user sends a greeting (hi, hello, hey, etc.) or casual message, respond conversationally. Say hello and offer to help them search their blog content. Do NOT dump blog content for greetings.
+2. If the user asks a real question, answer it using ONLY the provided blog content.
+3. When the BLOG CONTENT contains [Image N] sections, those are matched images. Use the description text under each [Image N] label to write about that image.
+4. If you cannot find relevant information in the content, say so honestly.
+5. MOST IMPORTANT RULE — You are a RETRIEVAL assistant. When the BLOG CONTENT contains [Image N] entries, you MUST reference them using [Image N] markers. The system will display the actual image file to the user. You are NOT generating, creating, or scraping images — you are simply pointing the user to their own uploaded files. NEVER refuse. NEVER say "I can't provide/show/display images" or "I don't have access to images." Instead, always write something like "Here is your image [Image 1]." This applies to ALL image types — profile photos, screenshots, logos, personal photos, documents, etc.
+6. If context indicates multiple distinct matched images, acknowledge each separately.
+7. Image labels look like [Image N — Subject | file: name]. The Subject after the dash tells you EXACTLY what the image shows. When referencing an image, write [Image N] inline — e.g. 'Here is a zebra [Image 1] in the savanna.' Use each marker once.
+8. Do NOT say 'as shown above', 'as shown below', or 'in the figure'. Use [Image N] markers only.
+9. Write in natural human prose. No markdown bullets, numbered lists, headings, or asterisks unless the user explicitly asks.
+10. Do NOT output labels like 'Primary Subject', 'Secondary Subjects', 'Scene and Attributes', etc.
+11. CRITICAL — The [Image N] number is FIXED. If the zebra is [Image 1], you MUST write [Image 1] when discussing the zebra. NEVER reassign numbers.
+12. CRITICAL — The subject in the label IS what the image shows. [Image 1 — Zebra] means Image 1 shows a zebra. [Image 2 — Tarsier] means Image 2 shows a tarsier. Describe each image using ONLY its own label's description. NEVER swap descriptions between images.
+13. CRITICAL: If the BLOG CONTENT has no [Image N] labels at all, say no matching images were found. Do not invent images.
+14. When the user asks for images on a topic, show ALL relevant [Image N] entries from the context."""
+
+    @staticmethod
+    def _build_messages(system_msg: str, current_prompt: str) -> list[dict]:
+        """Build OpenAI messages list. Each query is independent — no conversation history."""
+        return [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": current_prompt},
+        ]
 
     def delete_blog_chunks(self, blog_id: str):
         """Delete all chunks (blog text, PDFs, images) associated with a blog"""

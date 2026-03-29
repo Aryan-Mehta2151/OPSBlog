@@ -201,6 +201,19 @@
   margin-bottom: 0.75rem;
 }
 
+.search-answer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.search-answer-header h2 {
+  margin-bottom: 0;
+}
+
 .search-placeholder p {
   margin: 0;
   color: var(--color-text-muted);

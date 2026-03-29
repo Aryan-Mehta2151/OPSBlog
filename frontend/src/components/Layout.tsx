@@ -1,7 +1,7 @@
 import { useAuth } from '../context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { FiLogOut, FiSearch, FiBook, FiUser, FiMoon, FiSun } from 'react-icons/fi';
+import { FiLogOut, FiUser, FiMoon, FiSun } from 'react-icons/fi';
 import './Layout.css';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -36,8 +36,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <span className="nav-org">{orgName}</span>
         </div>
         <div className="nav-links">
-          <Link to="/"><FiBook /> Blogs</Link>
-          <Link to="/search"><FiSearch /> Search</Link>
+          <Link to="/">Knowledge Base</Link>
         </div>
         <div className="nav-right">
           <button className="nav-theme-toggle" onClick={toggleTheme} type="button">

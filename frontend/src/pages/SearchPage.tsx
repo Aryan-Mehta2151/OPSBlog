@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { handleSessionExpired, searchApi } from '../api';
+import { documentsApi, handleSessionExpired, searchApi } from '../api';
 import { useAuth } from '../context/AuthContext';
-import { FiSearch, FiRefreshCw, FiDatabase, FiPlus, FiTrash2 } from 'react-icons/fi';
+import { FiSearch, FiRefreshCw, FiDatabase, FiPlus, FiTrash2, FiDownload } from 'react-icons/fi';
+import { jsPDF } from 'jspdf';
 import { getApiErrorMessage, notifyError, notifySuccess } from '../utils/toast';
 import './Search.css';
 
@@ -11,6 +12,11 @@ interface Source {
   organization: string;
   created_at: string;
   chunk_text: string;
+  type?: string;
+  blog_id?: string;
+  image_id?: string;
+  filename?: string;
+  context_image_index?: number;
 }
 
 interface ChatTurn {
@@ -39,6 +45,16 @@ const buildConversationTitle = (query: string) => {
     return normalized;
   }
   return `${normalized.slice(0, 40).trim()}...`;
+};
+
+const normalizeAnswerText = (text: string) => {
+  const raw = text || '';
+  return raw
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/\r\n/g, '\n');
 };
 
 export default function SearchPage() {
@@ -205,13 +221,44 @@ export default function SearchPage() {
     hasRetried = false
   ): Promise<StreamResult> => {
     const base = (import.meta.env.VITE_API_BASE_URL || '/api').trim() || '/api';
+
+    // Build conversation history from recent turns (close context)
+    const conv = conversations.find(c => c.id === conversationId);
+    const previousTurns = (conv?.turns || [])
+      .filter(t => t.id !== turnId && t.answer)
+      .slice(0, 10);
+    const conversationHistory = [...previousTurns].reverse().map(t => ({
+      question: t.question,
+      answer: t.answer,
+    }));
+
+    // Collect image keys already shown (within last 20 turns) for dedup
+    const IMAGE_DEDUP_WINDOW = 20;
+    const shownImageIds: string[] = [];
+    const recentForDedup = (conv?.turns || [])
+      .filter(t => t.id !== turnId && t.sources?.length)
+      .slice(0, IMAGE_DEDUP_WINDOW);
+    for (const t of recentForDedup) {
+      for (const s of t.sources) {
+        if (s.type === 'image' || s.type === 'pdf_embedded_image') {
+          const key = [s.type || '', s.blog_id || '', s.image_id || '', s.filename || ''].join('|');
+          if (!shownImageIds.includes(key)) shownImageIds.push(key);
+        }
+      }
+    }
+
     const res = await fetch(`${base}/search/query/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ question: query, detail_level: detailLevel }),
+      body: JSON.stringify({
+        question: query,
+        detail_level: detailLevel,
+        conversation_history: conversationHistory,
+        shown_image_ids: shownImageIds,
+      }),
     });
 
     if (!res.ok) {
@@ -410,6 +457,183 @@ export default function SearchPage() {
     }
   };
 
+  const handleDownloadAnswerPdf = async (turn: ChatTurn, index: number) => {
+    try {
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 40;
+      const contentWidth = pageWidth - margin * 2;
+      let y = margin;
+
+      const writeParagraph = (text: string, fontSize = 11, bold = false) => {
+        doc.setFont('helvetica', bold ? 'bold' : 'normal');
+        doc.setFontSize(fontSize);
+        const lines = doc.splitTextToSize(text || '', contentWidth);
+        for (const line of lines) {
+          if (y > pageHeight - margin) {
+            doc.addPage();
+            y = margin;
+          }
+          doc.text(line, margin, y);
+          y += fontSize + 4;
+        }
+      };
+
+      const writeAnswerText = (text: string) => {
+        const paragraphs = text
+          .split(/\n\s*\n/)
+          .map((p) => p.trim())
+          .filter(Boolean);
+        if (paragraphs.length === 0) {
+          return;
+        }
+        paragraphs.forEach((p) => {
+          writeParagraph(p, 11, false);
+          y += 4;
+        });
+      };
+
+      const normalizedAnswer = normalizeAnswerText(turn.answer || '');
+
+      const blobToDataUrl = (blob: Blob) =>
+        new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(String(reader.result || ''));
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+
+      const loadImage = (src: string) =>
+        new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          img.src = src;
+        });
+
+      writeParagraph('Answer', 14, true);
+      y += 8;
+
+      const imageSources = turn.sources.filter(
+        (src) => src.type === 'image' || src.type === 'pdf_embedded_image'
+      );
+      const imageByContextIndex = new Map<number, Source>();
+      for (const src of imageSources) {
+        if (typeof src.context_image_index === 'number') {
+          imageByContextIndex.set(src.context_image_index, src);
+        }
+      }
+
+      const drawInlineImage = async (src: Source, displayNum: number) => {
+        if (!src.blog_id || !src.image_id) {
+          return;
+        }
+        const res = await documentsApi.viewImage(src.blog_id, src.image_id);
+        const blob = res.data as Blob;
+        const dataUrl = await blobToDataUrl(blob);
+        const image = await loadImage(dataUrl);
+
+        const maxWidth = contentWidth;
+        const maxHeight = 240;
+        const scale = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
+        const drawWidth = image.width * scale;
+        const drawHeight = image.height * scale;
+
+        if (y + drawHeight + 28 > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+
+        const format = (blob.type || '').toLowerCase().includes('png') ? 'PNG' : 'JPEG';
+        doc.addImage(dataUrl, format, margin, y, drawWidth, drawHeight);
+        y += drawHeight + 6;
+        writeParagraph(`Image ${displayNum}`, 9, true);
+        y += 6;
+      };
+
+      const IMAGE_MARKER = /\[Image\s+(\d+)(?:\s*[—–\-][^\]]*)?\]/gi;
+      const segments: Array<{ text: string; imageNum?: number }> = [];
+      let lastIndex = 0;
+      let match: RegExpExecArray | null;
+      IMAGE_MARKER.lastIndex = 0;
+      while ((match = IMAGE_MARKER.exec(normalizedAnswer)) !== null) {
+        if (match.index > lastIndex) {
+          segments.push({ text: normalizedAnswer.slice(lastIndex, match.index) });
+        }
+        segments.push({ text: '', imageNum: parseInt(match[1], 10) });
+        lastIndex = match.index + match[0].length;
+      }
+      if (lastIndex < normalizedAnswer.length) {
+        segments.push({ text: normalizedAnswer.slice(lastIndex) });
+      }
+
+      const referencedNums = new Set<number>();
+      const hasMarkers = segments.some((s) => s.imageNum !== undefined);
+      let pdfImageCounter = 0;
+      if (segments.length > 0) {
+        for (const seg of segments) {
+          if (seg.imageNum !== undefined) {
+            const src = imageByContextIndex.get(seg.imageNum) || imageSources[seg.imageNum - 1];
+            if (src) {
+              referencedNums.add(seg.imageNum);
+              pdfImageCounter += 1;
+              await drawInlineImage(src, pdfImageCounter);
+            }
+            continue;
+          }
+          if (seg.text && seg.text.trim()) {
+            writeAnswerText(seg.text);
+          }
+        }
+      } else {
+        writeAnswerText(normalizedAnswer);
+      }
+
+      if (!hasMarkers) {
+        for (const src of imageSources) {
+          const idx = src.context_image_index;
+          if (typeof idx === 'number' && referencedNums.has(idx)) {
+            continue;
+          }
+          try {
+            pdfImageCounter += 1;
+            await drawInlineImage(src, pdfImageCounter);
+          } catch {
+            // Ignore individual image failures to keep export working.
+          }
+        }
+      }
+
+      const slug = (turn.question || 'answer')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '-')
+        .slice(0, 48) || `answer-${index + 1}`;
+
+      const fileName = `${slug}.pdf`;
+      try {
+        doc.save(fileName);
+      } catch {
+        const blob = doc.output('blob');
+        const blobUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = blobUrl;
+        anchor.download = fileName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(blobUrl);
+      }
+      notifySuccess('Answer downloaded as PDF');
+    } catch (error: any) {
+      const msg = error?.message ? `Failed to download PDF: ${error.message}` : 'Failed to download PDF';
+      notifyError(msg);
+      console.error('PDF download error (SearchPage):', error);
+    }
+  };
+
   const activeTurns = activeConversation?.turns ?? [];
 
   return (
@@ -515,7 +739,7 @@ export default function SearchPage() {
         ) : activeConversation ? (
           activeTurns.length > 0 ? (
             <div className="search-chat">
-              {activeTurns.map((turn) => (
+              {activeTurns.map((turn, turnIndex) => (
                 <div key={turn.id} className="search-turn">
                   <div className="search-question-card">
                     <h3>You asked</h3>
@@ -523,9 +747,19 @@ export default function SearchPage() {
                   </div>
 
                   <div className="search-answer">
-                    <h2>Answer</h2>
+                    <div className="search-answer-header">
+                      <h2>Answer</h2>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => handleDownloadAnswerPdf(turn, turnIndex)}
+                        aria-label="Download answer as PDF"
+                      >
+                        <FiDownload /> Download PDF
+                      </button>
+                    </div>
                     <div className="answer-text">
-                      {turn.answer}
+                      {normalizeAnswerText(turn.answer)}
                       {searching && activeTurnId === turn.id && <span className="cursor-blink">|</span>}
                     </div>
 

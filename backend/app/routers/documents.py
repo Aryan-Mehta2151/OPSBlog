@@ -109,7 +109,12 @@ def list_documents(
 
     for blog in blogs:
         pdfs = db.query(PdfDocument).filter(PdfDocument.blog_id == blog.id).all()
-        images = db.query(ImageDocument).filter(ImageDocument.blog_id == blog.id).all()
+        images = (
+            db.query(ImageDocument)
+            .filter(ImageDocument.blog_id == blog.id)
+            .all()
+        )
+        visible_images = [img for img in images if not (img.filename or "").startswith("pdfembed_")]
         has_content = bool(blog.content and blog.content.strip())
 
         # Text entry
@@ -135,7 +140,7 @@ def list_documents(
             ))
 
         # Image attachments
-        for img in images:
+        for img in visible_images:
             results.append(DocumentItem(
                 type="image",
                 id=img.id,
@@ -146,7 +151,7 @@ def list_documents(
             ))
 
         # Orphaned blog with no content and no files — show as empty text entry
-        if not has_content and not pdfs and not images:
+        if not has_content and not pdfs and not visible_images:
             results.append(DocumentItem(
                 type="text",
                 id=blog.id,
@@ -411,11 +416,29 @@ def delete_pdf_document(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorised to delete this file")
 
     blog_id = pdf.blog_id
+    embedded_prefix = f"pdfembed_{pdf.id}_"
 
     try:
         os.remove(pdf.file_path)
     except OSError:
         pass
+
+    # Delete extracted embedded images that were created from this PDF.
+    embedded_images = (
+        db.query(ImageDocument)
+        .filter(
+            ImageDocument.blog_id == blog_id,
+            ImageDocument.filename.like(f"{embedded_prefix}%"),
+        )
+        .all()
+    )
+    embedded_image_ids = [img.id for img in embedded_images]
+    for img in embedded_images:
+        try:
+            os.remove(img.file_path)
+        except OSError:
+            pass
+        db.delete(img)
 
     try:
         collection = vector_service.client.get_collection(name="blog_posts")
@@ -427,6 +450,15 @@ def delete_pdf_document(
         ]
         if chunk_ids:
             collection.delete(ids=chunk_ids)
+
+        if embedded_image_ids:
+            embedded_chunk_ids = [
+                all_chunks["ids"][i]
+                for i, m in enumerate(all_chunks["metadatas"])
+                if m.get("image_id") in embedded_image_ids
+            ]
+            if embedded_chunk_ids:
+                collection.delete(ids=embedded_chunk_ids)
     except Exception as e:
         print(f"Error deleting PDF chunks: {e}")
 

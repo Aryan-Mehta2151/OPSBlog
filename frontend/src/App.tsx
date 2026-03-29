@@ -3,10 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
-import BlogListPage from './pages/BlogListPage';
-import BlogCreatePage from './pages/BlogCreatePage';
-import BlogDetailPage from './pages/BlogDetailPage';
-import SearchPage from './pages/SearchPage';
+import HomePage from './pages/HomePage';
 import { ToastContainer } from 'react-toastify';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -28,10 +25,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
       <Route path="/signup" element={<GuestRoute><SignupPage /></GuestRoute>} />
-      <Route path="/" element={<ProtectedRoute><BlogListPage /></ProtectedRoute>} />
-      <Route path="/blogs/new" element={<ProtectedRoute><BlogCreatePage /></ProtectedRoute>} />
-      <Route path="/blogs/:blogId" element={<ProtectedRoute><BlogDetailPage /></ProtectedRoute>} />
-      <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
+      <Route path="/" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

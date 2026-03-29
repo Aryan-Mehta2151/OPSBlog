@@ -4,8 +4,9 @@ import { useAuth } from '../context/AuthContext';
 import {
   FiFileText, FiFile, FiImage, FiPlus, FiSearch,
   FiRefreshCw, FiDatabase, FiTrash2, FiX, FiEye,
-  FiChevronDown, FiChevronUp, FiUpload,
+  FiChevronDown, FiChevronUp, FiUpload, FiCopy, FiCheck, FiDownload,
 } from 'react-icons/fi';
+import { jsPDF } from 'jspdf';
 import { getApiErrorMessage, notifyError, notifySuccess } from '../utils/toast';
 import './Search.css';
 import './HomePage.css';
@@ -28,6 +29,14 @@ interface Source {
   organization: string;
   created_at: string;
   chunk_text: string;
+  type?: string;
+  blog_id?: string;
+  image_id?: string;
+  pdf_id?: string;
+  filename?: string;
+  source_pdf_id?: string;
+  source_pdf_filename?: string;
+  context_image_index?: number;
 }
 
 interface ChatTurn {
@@ -48,6 +57,118 @@ interface Conversation {
 interface StreamResult {
   answer: string;
   sources: Source[];
+}
+
+interface InterleavedImageSource {
+  source: Source;
+  blogId: string;
+  imageId: string;
+  narrative: string;
+  key: string;
+}
+
+const extractImageNarrative = (chunkText: string, fallbackTitle: string) => {
+  const text = (chunkText || '').trim();
+  if (!text) return `Relevant visual match for ${fallbackTitle}.`;
+
+  const imageDescriptionMatch = text.match(/Image Description:\s*([\s\S]*?)(?:\n\s*Extracted Text:|$)/i);
+  if (imageDescriptionMatch?.[1]?.trim()) {
+    return imageDescriptionMatch[1].trim();
+  }
+
+  const cleaned = text
+    .replace(/\bImage:\s*/gi, '')
+    .replace(/\bExtracted Text:\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned) return `Relevant visual match for ${fallbackTitle}.`;
+  return cleaned.length > 320 ? `${cleaned.slice(0, 317).trim()}...` : cleaned;
+};
+
+const normalizeAnswerText = (text: string) => {
+  const raw = text || '';
+  return raw
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/\r\n/g, '\n');
+};
+
+function SourceImagePreview({
+  source,
+  blogId,
+  imageId,
+  onOpen,
+}: {
+  source: Source;
+  blogId: string | null;
+  imageId: string | null;
+  onOpen: (blogId: string, imageId: string, label: string) => void;
+}) {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const isImageSource = source.type === 'image' || source.type === 'pdf_embedded_image';
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+
+    const loadPreview = async () => {
+      if (!isImageSource || !blogId || !imageId) return;
+      setLoading(true);
+      setError('');
+      try {
+        const res = await documentsApi.viewImage(blogId, imageId);
+        objectUrl = URL.createObjectURL(res.data);
+        if (active) {
+          setImageUrl(objectUrl);
+        }
+      } catch {
+        if (active) {
+          setError('Failed to load image preview');
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadPreview();
+
+    return () => {
+      active = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [isImageSource, blogId, imageId]);
+
+  if (!isImageSource || !blogId || !imageId) return null;
+
+  return (
+    <div className="source-image-wrap">
+      <div className="source-image-label">
+        {source.type === 'pdf_embedded_image' ? 'Image from PDF' : 'Image match'}
+        {source.source_pdf_filename ? ` • ${source.source_pdf_filename}` : ''}
+      </div>
+      {loading && <div className="source-image-loading">Loading image...</div>}
+      {error && <div className="source-image-error">{error}</div>}
+      {!loading && !error && imageUrl && (
+        <button
+          type="button"
+          className="source-image-button"
+          onClick={() => onOpen(blogId, imageId, source.filename || source.title)}
+        >
+          <img src={imageUrl} alt={source.filename || source.title} className="source-image-inline" />
+        </button>
+      )}
+    </div>
+  );
 }
 
 const buildConversationTitle = (query: string) => {
@@ -206,6 +327,65 @@ export default function HomePage() {
     }
   };
 
+  const resolveSourceImageRef = (source: Source): { blogId: string | null; imageId: string | null } => {
+    if (source.blog_id && source.image_id) {
+      return { blogId: source.blog_id, imageId: source.image_id };
+    }
+
+    if (!source.blog_id || !source.filename) {
+      return { blogId: null, imageId: null };
+    }
+
+    const fallback = documents.find(
+      (doc) => doc.type === 'image' && doc.blog_id === source.blog_id && doc.filename === source.filename,
+    );
+
+    return { blogId: source.blog_id, imageId: fallback?.id ?? null };
+  };
+
+  const handleOpenSourceImage = async (blogId: string, imageId: string, label: string) => {
+    try {
+      const res = await documentsApi.viewImage(blogId, imageId);
+      const url = URL.createObjectURL(res.data);
+      setImagePreview((prev) => {
+        if (prev?.url) URL.revokeObjectURL(prev.url);
+        return {
+          url,
+          name: label,
+        };
+      });
+    } catch (err: any) {
+      notifyError(getApiErrorMessage(err, 'Failed to open image source'));
+    }
+  };
+
+  const getInterleavedImageSources = (sources: Source[]): InterleavedImageSource[] => {
+    const imageSources = sources.filter(
+      (src) => src.type === 'image' || src.type === 'pdf_embedded_image',
+    );
+    const seen = new Set<string>();
+    const collected: InterleavedImageSource[] = [];
+
+    for (const src of imageSources) {
+      const { blogId, imageId } = resolveSourceImageRef(src);
+      if (!blogId || !imageId) continue;
+
+      const key = `${blogId}|${imageId}|${src.filename || src.title}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      collected.push({
+        source: src,
+        blogId,
+        imageId,
+        narrative: extractImageNarrative(src.chunk_text, src.filename || src.title),
+        key,
+      });
+    }
+
+    return collected;
+  };
+
   // â”€â”€ chat state (identical to SearchPage) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [question, setQuestion] = useState('');
   const [detailLevel, setDetailLevel] = useState('normal');
@@ -220,9 +400,25 @@ export default function HomePage() {
   const [chunks, setChunks] = useState<any[]>([]);
   const [showChunks, setShowChunks] = useState(false);
   const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const copyResetRef = useRef<number | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
 
   useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
+
+  useEffect(() => {
+    if (!indexMsg) return;
+    const timeoutId = window.setTimeout(() => setIndexMsg(''), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [indexMsg]);
+
+  useEffect(() => {
+    return () => {
+      if (copyResetRef.current) {
+        window.clearTimeout(copyResetRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -321,10 +517,14 @@ export default function HomePage() {
     token: string | null, hasRetried = false,
   ): Promise<StreamResult> => {
     const base = (import.meta.env.VITE_API_BASE_URL || '/api').trim() || '/api';
+
     const res = await fetch(`${base}/search/query/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify({ question: query, detail_level: detailLevel }),
+      body: JSON.stringify({
+        question: query,
+        detail_level: detailLevel,
+      }),
     });
 
     if (!res.ok) {
@@ -397,6 +597,7 @@ export default function HomePage() {
     setActiveTurnId(turnId);
     setSearching(true);
     setShowChunks(false);
+    setIndexMsg('');
     setChatError('');
     setQuestion('');
 
@@ -451,6 +652,200 @@ export default function HomePage() {
   const handleNewChat = async () => {
     try { await createConversation(); setQuestion(''); }
     catch (err: any) { setChatError(getApiErrorMessage(err, 'Failed to create chat')); }
+  };
+
+  const handleCopy = async (text: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      if (copyResetRef.current) {
+        window.clearTimeout(copyResetRef.current);
+      }
+      copyResetRef.current = window.setTimeout(() => setCopiedKey(null), 1800);
+    } catch {
+      notifyError('Failed to copy');
+    }
+  };
+
+  const handleDownloadAnswerPdf = async (turn: ChatTurn, index: number) => {
+    try {
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 40;
+      const contentWidth = pageWidth - margin * 2;
+      let y = margin;
+
+      const writeParagraph = (text: string, fontSize = 11, isBold = false) => {
+        doc.setFont('helvetica', isBold ? 'bold' : 'normal');
+        doc.setFontSize(fontSize);
+        const lines = doc.splitTextToSize(text || '', contentWidth);
+        for (const line of lines) {
+          if (y > pageHeight - margin) {
+            doc.addPage();
+            y = margin;
+          }
+          doc.text(line, margin, y);
+          y += fontSize + 4;
+        }
+      };
+
+      const writeAnswerText = (text: string) => {
+        const paragraphs = text
+          .split(/\n\s*\n/)
+          .map((p) => p.trim())
+          .filter(Boolean);
+        if (paragraphs.length === 0) {
+          return;
+        }
+        paragraphs.forEach((p) => {
+          writeParagraph(p, 11, false);
+          y += 4;
+        });
+      };
+
+      const blobToDataUrl = (blob: Blob) =>
+        new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(String(reader.result || ''));
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+
+      const loadImage = (src: string) =>
+        new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = reject;
+          img.src = src;
+        });
+
+      const normalizedAnswer = normalizeAnswerText(turn.answer || '');
+
+      writeParagraph('Answer', 14, true);
+      y += 8;
+
+      const interleavedImages = getInterleavedImageSources(turn.sources);
+      const imageByContextIndex = new Map<number, InterleavedImageSource>();
+      for (const entry of interleavedImages) {
+        const idx = entry.source.context_image_index;
+        if (typeof idx === 'number') {
+          imageByContextIndex.set(idx, entry);
+        }
+      }
+
+      const drawInlineImage = async (entry: InterleavedImageSource, displayNum: number) => {
+        const { blogId, imageId } = resolveSourceImageRef(entry.source);
+        if (!blogId || !imageId) {
+          return;
+        }
+        const res = await documentsApi.viewImage(blogId, imageId);
+        const blob = res.data as Blob;
+        const dataUrl = await blobToDataUrl(blob);
+        const image = await loadImage(dataUrl);
+
+        const maxWidth = contentWidth;
+        const maxHeight = 240;
+        const scale = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
+        const drawWidth = image.width * scale;
+        const drawHeight = image.height * scale;
+
+        if (y + drawHeight + 28 > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+
+        const format = (blob.type || '').toLowerCase().includes('png') ? 'PNG' : 'JPEG';
+        doc.addImage(dataUrl, format, margin, y, drawWidth, drawHeight);
+        y += drawHeight + 6;
+        writeParagraph(`Image ${displayNum}`, 9, true);
+        y += 6;
+      };
+
+      const IMAGE_MARKER = /\[Image\s+(\d+)(?:\s*[—–\-][^\]]*)?\]/gi;
+      const segments: Array<{ text: string; imageNum?: number }> = [];
+      let lastIndex = 0;
+      let match: RegExpExecArray | null;
+      IMAGE_MARKER.lastIndex = 0;
+      while ((match = IMAGE_MARKER.exec(normalizedAnswer)) !== null) {
+        if (match.index > lastIndex) {
+          segments.push({ text: normalizedAnswer.slice(lastIndex, match.index) });
+        }
+        segments.push({ text: '', imageNum: parseInt(match[1], 10) });
+        lastIndex = match.index + match[0].length;
+      }
+      if (lastIndex < normalizedAnswer.length) {
+        segments.push({ text: normalizedAnswer.slice(lastIndex) });
+      }
+
+      const referencedNums = new Set<number>();
+      const hasMarkers = segments.some((s) => s.imageNum !== undefined);
+      let pdfImageCounter = 0;
+      if (segments.length > 0) {
+        for (const seg of segments) {
+          if (seg.imageNum !== undefined) {
+            const entry = imageByContextIndex.get(seg.imageNum);
+            if (entry) {
+              referencedNums.add(seg.imageNum);
+              pdfImageCounter += 1;
+              await drawInlineImage(entry, pdfImageCounter);
+            }
+            continue;
+          }
+          if (seg.text && seg.text.trim()) {
+            writeAnswerText(seg.text);
+          }
+        }
+      } else {
+        writeAnswerText(normalizedAnswer);
+      }
+
+      // Match chat UI behavior exactly:
+      // - when markers exist, show only referenced images
+      // - when markers do not exist, append retrieved images
+      if (!hasMarkers) {
+        for (const entry of interleavedImages) {
+          const idx = entry.source.context_image_index;
+          if (typeof idx === 'number' && referencedNums.has(idx)) {
+            continue;
+          }
+          try {
+            pdfImageCounter += 1;
+            await drawInlineImage(entry, pdfImageCounter);
+          } catch {
+            // Continue with remaining content even if one image fails.
+          }
+        }
+      }
+
+      const slug = (turn.question || 'answer')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '-')
+        .slice(0, 48) || `answer-${index + 1}`;
+
+      const fileName = `${slug}.pdf`;
+      try {
+        doc.save(fileName);
+      } catch {
+        // Some browsers block direct save in async click handlers; fallback to blob URL.
+        const blob = doc.output('blob');
+        const blobUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = blobUrl;
+        anchor.download = fileName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(blobUrl);
+      }
+      notifySuccess('Answer downloaded as PDF');
+    } catch (error: any) {
+      const msg = error?.message ? `Failed to download PDF: ${error.message}` : 'Failed to download PDF';
+      notifyError(msg);
+      console.error('PDF download error (HomePage):', error);
+    }
   };
 
   const handleDeleteConversation = async (convId: string) => {
@@ -739,18 +1134,128 @@ export default function HomePage() {
           ) : activeConversation ? (
             activeTurns.length > 0 ? (
               <div className="search-chat">
-                {activeTurns.map((turn) => (
+                {activeTurns.map((turn, turnIndex) => (
                   <div key={turn.id} className="search-turn">
                     <div className="search-question-card">
-                      <h3>You asked</h3>
+                      <div className="chat-card-header">
+                        <h3>You asked</h3>
+                        <button
+                          type="button"
+                          className="chat-copy-btn"
+                          onClick={() => handleCopy(turn.question, `question-${turn.id}`)}
+                          aria-label="Copy question"
+                        >
+                          {copiedKey === `question-${turn.id}` ? <FiCheck /> : <FiCopy />}
+                          {copiedKey === `question-${turn.id}` ? 'Copied' : 'Copy'}
+                        </button>
+                      </div>
                       <div className="answer-text">{turn.question}</div>
                     </div>
                     <div className="search-answer">
-                      <h2>Answer</h2>
-                      <div className="answer-text">
-                        {turn.answer}
-                        {searching && activeTurnId === turn.id && <span className="cursor-blink">|</span>}
+                      <div className="chat-card-header">
+                        <h2>Answer</h2>
+                        <div className="chat-card-actions">
+                          <button
+                            type="button"
+                            className="chat-copy-btn"
+                            onClick={() => handleCopy(normalizeAnswerText(turn.answer), `answer-${turn.id}`)}
+                            aria-label="Copy answer"
+                          >
+                            {copiedKey === `answer-${turn.id}` ? <FiCheck /> : <FiCopy />}
+                            {copiedKey === `answer-${turn.id}` ? 'Copied' : 'Copy'}
+                          </button>
+                          <button
+                            type="button"
+                            className="chat-copy-btn"
+                            onClick={() => handleDownloadAnswerPdf(turn, turnIndex)}
+                            aria-label="Download answer as PDF"
+                          >
+                            <FiDownload /> PDF
+                          </button>
+                        </div>
                       </div>
+                      {(() => {
+                        const normalizedAnswer = normalizeAnswerText(turn.answer || '');
+                        const interleavedImages = getInterleavedImageSources(turn.sources);
+
+                        // Build a lookup: context_image_index → image entry
+                        const imageByContextIndex = new Map<number, InterleavedImageSource>();
+                        for (const entry of interleavedImages) {
+                          const idx = entry.source.context_image_index;
+                          if (typeof idx === 'number') {
+                            imageByContextIndex.set(idx, entry);
+                          }
+                        }
+
+                        const renderVisualBlock = (entry: InterleavedImageSource, displayNum: number) => (
+                          <div key={`img-block-${turn.id}-${entry.key}`} className="chat-interleaved-image-block">
+                            <div className="chat-interleaved-image-head">Image {displayNum}</div>
+                            <SourceImagePreview
+                              source={entry.source}
+                              blogId={entry.blogId}
+                              imageId={entry.imageId}
+                              onOpen={handleOpenSourceImage}
+                            />
+                          </div>
+                        );
+
+                        // Split answer text on [Image N] markers so each image is placed
+                        // exactly where the AI referenced it, not positionally.
+                        // Matches [Image 1], [Image 2], and also [Image 1 — Subject | file: ...] variants.
+                        const IMAGE_MARKER = /\[Image\s+(\d+)(?:\s*[—–\-][^\]]*)?\]/gi;
+                        const segments: Array<{ text: string; imageNum?: number }> = [];
+                        let lastIndex = 0;
+                        let m: RegExpExecArray | null;
+                        IMAGE_MARKER.lastIndex = 0;
+                        while ((m = IMAGE_MARKER.exec(normalizedAnswer)) !== null) {
+                          if (m.index > lastIndex) {
+                            segments.push({ text: normalizedAnswer.slice(lastIndex, m.index) });
+                          }
+                          segments.push({ text: '', imageNum: parseInt(m[1], 10) });
+                          lastIndex = m.index + m[0].length;
+                        }
+                        if (lastIndex < normalizedAnswer.length) {
+                          segments.push({ text: normalizedAnswer.slice(lastIndex) });
+                        }
+
+                        const referencedNums = new Set<number>();
+                        const hasMarkers = segments.some((s) => s.imageNum !== undefined);
+                        let inlineImageCounter = 0;
+
+                        return (
+                          <div className="answer-text">
+                            {segments.length > 1 || (segments.length === 1 && segments[0].imageNum !== undefined) ? (
+                              segments.map((seg, si) => {
+                                if (seg.imageNum !== undefined) {
+                                  const entry = imageByContextIndex.get(seg.imageNum);
+                                  if (entry) {
+                                    referencedNums.add(seg.imageNum);
+                                    inlineImageCounter += 1;
+                                    return renderVisualBlock(entry, inlineImageCounter);
+                                  }
+                                  return null;
+                                }
+                                return seg.text
+                                  ? <p key={`${turn.id}-seg-${si}`}>{seg.text}</p>
+                                  : null;
+                              })
+                            ) : (
+                              // No [Image N] markers — render plain text
+                              normalizedAnswer.split(/\n\s*\n/).filter(Boolean).map((p, pi) => (
+                                <p key={`${turn.id}-p-${pi}`}>{p.trim()}</p>
+                              ))
+                            )}
+                            {/* If no markers exist, fallback to showing retrieved images; otherwise keep strict marker alignment. */}
+                            {!hasMarkers && interleavedImages
+                              .filter(e => typeof e.source.context_image_index !== 'number' || !referencedNums.has(e.source.context_image_index))
+                              .map((entry) => {
+                                inlineImageCounter += 1;
+                                return renderVisualBlock(entry, inlineImageCounter);
+                              })}
+                            {searching && activeTurnId === turn.id && <span className="cursor-blink">|</span>}
+                          </div>
+                        );
+                      })()}
                       {turn.sources.length > 0 && (
                         <div className="sources-toggle-block">
                           <button type="button" className="btn btn-secondary btn-sm"
@@ -761,11 +1266,22 @@ export default function HomePage() {
                             <div className="sources-section">
                               <h3>Sources ({turn.sources.length})</h3>
                               {turn.sources.map((src, i) => (
-                                <div key={i} className="source-card">
-                                  <div className="source-title">{src.title}</div>
-                                  <div className="source-meta">By {src.author} &middot; {src.organization}{src.created_at && <> &middot; {new Date(src.created_at).toLocaleDateString()}</>}</div>
-                                  <div className="source-chunk">{src.chunk_text}</div>
-                                </div>
+                                (() => {
+                                  const { blogId, imageId } = resolveSourceImageRef(src);
+                                  return (
+                                    <div key={i} className="source-card">
+                                      <div className="source-title">{src.title}</div>
+                                      <div className="source-meta">By {src.author} &middot; {src.organization}{src.created_at && <> &middot; {new Date(src.created_at).toLocaleDateString()}</>}</div>
+                                      <SourceImagePreview
+                                        source={src}
+                                        blogId={blogId}
+                                        imageId={imageId}
+                                        onOpen={handleOpenSourceImage}
+                                      />
+                                      <div className="source-chunk">{src.chunk_text}</div>
+                                    </div>
+                                  );
+                                })()
                               ))}
                             </div>
                           )}
