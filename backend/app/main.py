@@ -54,12 +54,18 @@ def tables(db: Session = Depends(get_db)):
 # Serve React frontend static files in production
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 if FRONTEND_DIR.is_dir():
-    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="static")
+    # Mount the entire dist directory as a SPA.
+    # html=True makes StaticFiles serve index.html for directory requests,
+    # and all files (CSS, JS, images) get correct MIME types automatically.
+    # The catch-all route below handles client-side routing (non-file paths → index.html).
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="static-assets")
 
     @app.get("/{full_path:path}")
     def serve_spa(full_path: str):
         """Serve React SPA — any non-API path returns index.html"""
         file = FRONTEND_DIR / full_path
         if file.is_file():
-            return FileResponse(str(file))
-        return FileResponse(str(FRONTEND_DIR / "index.html"))
+            import mimetypes
+            mime, _ = mimetypes.guess_type(str(file))
+            return FileResponse(str(file), media_type=mime or "application/octet-stream")
+        return FileResponse(str(FRONTEND_DIR / "index.html"), media_type="text/html")
