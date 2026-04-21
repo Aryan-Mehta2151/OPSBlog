@@ -1,0 +1,540 @@
+﻿
+======================================================================
+SIMULATING QUERY: 'give me jungle images'
+shown_image_ids: None
+======================================================================
+
+--- Step 1: Semantic search returned 12 chunks ---
+  [0] type=pdf dist=1.0864 file=image_heavy_pdf.pdf
+      Keywords: Landscape, lake, forest, mountains, nature, reflections, trees, snow-c...
+  [1] type=pdf dist=1.0980 file=image_heavy_pdf.pdf
+      [PDF Image Page 4, Image 1] I'm unable to analyze or describe specific images em...
+  [2] type=pdf dist=1.1600 file=image_heavy_pdf.pdf
+      Image-Heavy PDF  Prepared By: Website:  Sample Team sample-files.com  Bs  oo.   ...
+  [3] type=pdf dist=1.1664 file=image_heavy_pdf.pdf
+      PDF: image_heavy_pdf.pdf Blog: image_heavy_pdf.pdf  Sample Team Prepared By: sam...
+  [4] type=pdf_embedded_image dist=1.1707 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg Blog: image_heav...
+  [5] type=pdf_embedded_image dist=1.1835 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg Blog: image_heav...
+  [6] type=pdf dist=1.1848 file=image_heavy_pdf.pdf
+      [PDF Image Page 2, Image 1] Primary Subject: Waterfall in a forest setting  Seco...
+  [7] type=pdf_embedded_image dist=1.2083 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg Blog: image_heav...
+  [8] type=pdf_embedded_image dist=1.2218 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i3.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i3.jpeg Blog: image_heav...
+  [9] type=pdf_embedded_image dist=1.2392 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i1.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i1.jpeg Blog: image_heav...
+  [10] type=pdf_embedded_image dist=1.2468 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i1.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i1.jpeg Blog: image_heav...
+  [11] type=pdf_embedded_image dist=1.2507 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p6_i1.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p6_i1.jpeg Blog: image_heav...
+
+--- Step 2: 5 text sources ---
+
+--- Step 3: Image embedding search returned 5 -> 5 after exclusion ---
+  [0] dist=1.1707 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg subject=Zebra
+  [1] dist=1.1835 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg subject=Tarsier
+  [2] dist=1.2083 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg subject=Lake with surrounding pine forest
+  [3] dist=1.2218 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i3.jpeg subject=Bamboo
+  [4] dist=1.2392 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i1.jpeg subject=Cheetah
+
+--- Step 5a: 5 cleaned text chunks ---
+
+  TEXT CHUNK 1 (974 chars):
+  Keywords:
+Landscape, lake, forest, mountains, nature, reflections, trees, snow-capped, serene, wilderness.
+
+[PDF Image Page 2, Image 3]
+Primary Subject:
+Bamboo forest viewed from the ground looking upward.
+
+Secondary Subjects:
+Sky, foliage.
+
+Chart/Diagram Type (if applicable):
+Not applicable.
+
+Visib...
+
+  TEXT CHUNK 2 (983 chars):
+  [PDF Image Page 4, Image 1]
+I'm unable to analyze or describe specific images embedded in PDFs directly. However, if you describe the image to me, I can help with analysis or related information!
+
+[PDF Image Page 4, Image 2]
+Primary Subject:
+Tarsier (a small primate)
+
+Secondary Subjects:
+Tree branch...
+
+  TEXT CHUNK 3 (922 chars):
+  Image-Heavy
+PDF
+
+Prepared By: Website:
+
+Sample Team sample-files.com
+
+Bs
+
+oo.
+
+
+Nature Landscape
+
+A beautiful landscape showcasing the wonders of
+nature.
+
+This sample PDF file is provided by . Visit us for more sample files and resource.
+
+City Skyline
+
+A high-resolution image of a bustling city skyl...
+
+  TEXT CHUNK 4 (995 chars):
+  PDF: image_heavy_pdf.pdf
+Blog: image_heavy_pdf.pdf
+
+Sample Team
+Prepared By:
+sample-files.com
+Image-Heavy
+PDF
+Website:
+Nature Landscape
+A beautiful landscape showcasing the wonders of
+nature.
+This sample PDF file is provided by Sample-Files.com. Visit us for more sample files and resource.
+City Skyl...
+
+  TEXT CHUNK 5 (974 chars):
+  [PDF Image Page 2, Image 1]
+Primary Subject:
+Waterfall in a forest setting
+
+Secondary Subjects:
+Rocks, trees, river, logs
+
+Chart/Diagram Type (if applicable):
+N/A
+
+Visible Text and Labels:
+None
+
+Important Values and Relationships:
+Waterfall flowing over rocks; surrounded by dense forest
+Logs collect...
+
+--- Step 5b: 5 labeled image chunks ---
+  [Image 1 ù Zebra | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg]
+  [Image 2 ù Tarsier | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg]
+  [Image 3 ù Lake with surrounding pine forest | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg]
+  [Image 4 ù Bamboo | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i3.jpeg]
+  [Image 5 ù Cheetah | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i1.jpeg]
+
+--- FINAL CONTEXT sent to LLM (9475 chars, 10 sections) ---
+  Text sections: 5
+  Image sections: 5
+
+--- FULL PROMPT (first 3000 chars) ---
+RESPONSE STYLE: Give a clear, natural answer in plain conversational prose. Use short paragraphs only.
+
+USER MESSAGE: give me jungle images
+
+BLOG CONTENT (use only if the user asks a real question):
+Keywords:
+Landscape, lake, forest, mountains, nature, reflections, trees, snow-capped, serene, wilderness.
+
+[PDF Image Page 2, Image 3]
+Primary Subject:
+Bamboo forest viewed from the ground looking upward.
+
+Secondary Subjects:
+Sky, foliage.
+
+Chart/Diagram Type (if applicable):
+Not applicable.
+
+Visible Text and Labels:
+None.
+
+Important Values and Relationships:
+The image captures the perspective from below a bamboo forest, emphasizing the tall, straight growth of the bamboo stalks reaching towards the sky. The vibrant green of the leaves contrasts with the blue sky above.
+
+Keywords:
+Bamboo, forest, foliage, nature, trees, sky, greenery, upward perspective, environment, wild.
+
+[PDF Image Page 3, Image 1]
+I'm unable to help with your request based on the image provided.
+
+[PDF Image Page 4, Image 1]
+I'm unable to analyze or describe specific images embedded in PDFs directly. However, if you describe the image to me, I can help with analysis or related information!
+
+[PDF Image Page 4, Image 1]
+I'm unable to analyze or describe specific images embedded in PDFs directly. However, if you describe the image to me, I can help with analysis or related information!
+
+[PDF Image Page 4, Image 2]
+Primary Subject:
+Tarsier (a small primate)
+
+Secondary Subjects:
+Tree branches, natural habitat
+
+Chart/Diagram Type (if applicable):
+Not applicable
+
+Visible Text and Labels:
+None
+
+Important Values and Relationships:
+None
+
+Keywords:
+Wildlife, Tarsier, Primate, Big eyes, Tree, Habitat, Nature, Philippines
+
+[PDF Image Page 4, Image 3]
+Primary Subject:
+Zebra in a grassland environment.
+
+Secondary Subjects:
+Wildebeest, grassy plains, trees, and foliage.
+
+Chart/Diagram Type (if applicable):
+Not applicable.
+
+Visible Text and Labels:
+None.
+
+Important Values and Relationships:
+The image depicts wildlife cohabitationùzebras and wildebeests grazing together in a natural habitat.
+
+Keywords:
+Wildlife, zebra, wildebeest, grassland, savanna, nature, herd, ecology.
+
+Image-Heavy
+PDF
+
+Prepared By: Website:
+
+Sample Team sample-files.com
+
+Bs
+
+oo.
+
+
+Nature Landscape
+
+A beautiful landscape showcasing the wonders of
+nature.
+
+This sample PDF file is provided by . Visit us for more sample files and resource.
+
+City Skyline
+
+A high-resolution image of a bustling city skyline at
+night.
+
+This sample PDF file is provided by . Visit us for more sample files and resource.
+
+Wildlife Photography
+
+An up-close capture of wildlife in their natural habitat.
+
+This sample PDF file is provided by Sample-Files.com. Visit us for more sample files and resource.
+
+Space Exploration
+
+An artistic representation of space exploration and
+galaxies.
+
+This sample PDF file is provided by . Visit us for more sample files and resource.
+
+Underwater World
+
+A breathtaking view of marine life deep beneath the
+ocean.
+
+This sample PDF 
+
+... (6674 more chars)
+
+######################################################################
+# SECOND QUERY: 'give me more' (with shown_image_ids from first query)
+######################################################################
+
+======================================================================
+SIMULATING QUERY: 'give me more'
+shown_image_ids: ['pdf_embedded_image|69defe85-3ee9-4057-a23d-ef5930174071|02459ecc-6d6c-4256-b95c-97583655a203|pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg', 'pdf_embedded_image|69defe85-3ee9-4057-a23d-ef5930174071|7c861bf5-8513-4135-b10e-d1ef78e65b3e|pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg', 'pdf_embedded_image|69defe85-3ee9-4057-a23d-ef5930174071|9a731baf-116f-47e5-adac-1a1b14fe0c21|pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg', 'pdf_embedded_image|69defe85-3ee9-4057-a23d-ef5930174071|5a88a3de-3149-4b34-b9bb-f94a41bec3e6|pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i3.jpeg', 'pdf_embedded_image|69defe85-3ee9-4057-a23d-ef5930174071|06b02fe9-f204-4325-8dba-c782487782a9|pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i1.jpeg']
+======================================================================
+
+--- Step 1: Semantic search returned 12 chunks ---
+  [0] type=image dist=1.5925 file=linkedin_profile.png
+      Permanent Resident JD dbarmsinh Desai University Atlanta Metropolitan Area - Con...
+  [1] type=pdf dist=1.6183 file=image_heavy_pdf.pdf
+      Image-Heavy PDF  Prepared By: Website:  Sample Team sample-files.com  Bs  oo.   ...
+  [2] type=image dist=1.6186 file=linkedin_profile.png
+      Scene and Attributes: - Profile photo is positioned left. Header image with text...
+  [3] type=? dist=1.6425 file=?
+      Title: image_heavy_pdf.pdf  Content:...
+  [4] type=pdf dist=1.6435 file=image_heavy_pdf.pdf
+      PDF: image_heavy_pdf.pdf Blog: image_heavy_pdf.pdf  Sample Team Prepared By: sam...
+  [5] type=pdf dist=1.6493 file=image_heavy_pdf.pdf
+      Keywords: Landscape, lake, forest, mountains, nature, reflections, trees, snow-c...
+  [6] type=pdf dist=1.6734 file=image_heavy_pdf.pdf
+      **Numbers and Units:** *None present*  [PDF Image Page 1, Image 1] Primary Subje...
+  [7] type=pdf_embedded_image dist=1.6816 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg Blog: image_heav...
+  [8] type=image dist=1.6905 file=linkedin_profile.png
+      Category Signals: - Domain: Document - LinkedIn, profile, full-stack developer, ...
+  [9] type=pdf dist=1.6931 file=image_heavy_pdf.pdf
+      Underwater World  A breathtaking view of marine life deep beneath the ocean.  Th...
+  [10] type=pdf_embedded_image dist=1.7018 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg Blog: image_heav...
+  [11] type=pdf dist=1.7023 file=image_heavy_pdf.pdf
+      [Page 5] ```plaintext Headings: Space Exploration  Body Text: An artistic repres...
+
+--- Step 2: 7 text sources ---
+
+--- Step 3: Image embedding search returned 5 -> 2 after exclusion ---
+  [0] dist=1.5925 file=linkedin_profile.png subject=?
+  [1] dist=1.7056 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p3_i1.jpeg subject=City skyline
+
+--- Step 5a: 7 cleaned text chunks ---
+
+  TEXT CHUNK 1 (922 chars):
+  Image-Heavy
+PDF
+
+Prepared By: Website:
+
+Sample Team sample-files.com
+
+Bs
+
+oo.
+
+
+Nature Landscape
+
+A beautiful landscape showcasing the wonders of
+nature.
+
+This sample PDF file is provided by . Visit us for more sample files and resource.
+
+City Skyline
+
+A high-resolution image of a bustling city skyl...
+
+  TEXT CHUNK 2 (36 chars):
+  Title: image_heavy_pdf.pdf
+
+Content:...
+
+  TEXT CHUNK 3 (995 chars):
+  PDF: image_heavy_pdf.pdf
+Blog: image_heavy_pdf.pdf
+
+Sample Team
+Prepared By:
+sample-files.com
+Image-Heavy
+PDF
+Website:
+Nature Landscape
+A beautiful landscape showcasing the wonders of
+nature.
+This sample PDF file is provided by Sample-Files.com. Visit us for more sample files and resource.
+City Skyl...
+
+  TEXT CHUNK 4 (974 chars):
+  Keywords:
+Landscape, lake, forest, mountains, nature, reflections, trees, snow-capped, serene, wilderness.
+
+[PDF Image Page 2, Image 3]
+Primary Subject:
+Bamboo forest viewed from the ground looking upward.
+
+Secondary Subjects:
+Sky, foliage.
+
+Chart/Diagram Type (if applicable):
+Not applicable.
+
+Visib...
+
+  TEXT CHUNK 5 (985 chars):
+  **Numbers and Units:**
+*None present*
+
+[PDF Image Page 1, Image 1]
+Primary Subject:
+Abstract and conceptual imagery with a technological and scientific theme.
+
+Secondary Subjects:
+1. Religious symbol (cross).
+2. Molecular structure depiction.
+3. Fluid dynamics or wave patterns.
+4. Mechanical or indu...
+
+  TEXT CHUNK 6 (939 chars):
+  Underwater World
+
+A breathtaking view of marine life deep beneath the
+ocean.
+
+This sample PDF file is provided by Sample-Files.com. Visit us for more sample files and resource.
+
+
+
+
+[Page 1]
+I'm unable to view images or PDFs directly, including extracting text. If you share the text content, I can ce...
+
+  TEXT CHUNK 7 (826 chars):
+  [Page 5]
+```plaintext
+Headings:
+Space Exploration
+
+Body Text:
+An artistic representation of space exploration and galaxies.
+
+Lists and Bullets:
+(None)
+
+Tables and Key-Value Pairs:
+(None)
+
+Named Entities (people, orgs, places, products):
+Sample-Files.com
+
+Numbers and Units:
+(None)
+
+Footer:
+This sampl...
+
+--- Step 5b: 2 labeled image chunks ---
+  [Image 1 | file: linkedin_profile.png]
+  [Image 2 ù City skyline | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p3_i1.jpeg]
+
+--- FINAL CONTEXT sent to LLM (6889 chars, 9 sections) ---
+  Text sections: 7
+  Image sections: 2
+
+--- FULL PROMPT (first 3000 chars) ---
+RESPONSE STYLE: Give a clear, natural answer in plain conversational prose. Use short paragraphs only.
+
+USER MESSAGE: give me more
+
+BLOG CONTENT (use only if the user asks a real question):
+Image-Heavy
+PDF
+
+Prepared By: Website:
+
+Sample Team sample-files.com
+
+Bs
+
+oo.
+
+
+Nature Landscape
+
+A beautiful landscape showcasing the wonders of
+nature.
+
+This sample PDF file is provided by . Visit us for more sample files and resource.
+
+City Skyline
+
+A high-resolution image of a bustling city skyline at
+night.
+
+This sample PDF file is provided by . Visit us for more sample files and resource.
+
+Wildlife Photography
+
+An up-close capture of wildlife in their natural habitat.
+
+This sample PDF file is provided by Sample-Files.com. Visit us for more sample files and resource.
+
+Space Exploration
+
+An artistic representation of space exploration and
+galaxies.
+
+This sample PDF file is provided by . Visit us for more sample files and resource.
+
+Underwater World
+
+A breathtaking view of marine life deep beneath the
+ocean.
+
+This sample PDF file is provided by Sample-Files.com. Visit us for more sample files and resource.
+
+Title: image_heavy_pdf.pdf
+
+Content:
+
+PDF: image_heavy_pdf.pdf
+Blog: image_heavy_pdf.pdf
+
+Sample Team
+Prepared By:
+sample-files.com
+Image-Heavy
+PDF
+Website:
+Nature Landscape
+A beautiful landscape showcasing the wonders of
+nature.
+This sample PDF file is provided by Sample-Files.com. Visit us for more sample files and resource.
+City Skyline
+A high-resolution image of a bustling city skyline at
+night.
+This sample PDF file is provided by Sample-Files.com. Visit us for more sample files and resource.
+Wildlife Photography
+An up-close capture of wildlife in their natural habitat.
+This sample PDF file is provided by Sample-Files.com. Visit us for more sample files and resource.
+Space Exploration
+An artistic representation of space exploration and
+galaxies.
+This sample PDF file is provided by Sample-Files.com. Visit us for more sample files and resource.
+Underwater World
+A breathtaking view of marine life deep beneath the
+ocean.
+This sample PDF file is provided by Sample-Files.com. Visit us for more sample files and resource.
+
+Keywords:
+Landscape, lake, forest, mountains, nature, reflections, trees, snow-capped, serene, wilderness.
+
+[PDF Image Page 2, Image 3]
+Primary Subject:
+Bamboo forest viewed from the ground looking upward.
+
+Secondary Subjects:
+Sky, foliage.
+
+Chart/Diagram Type (if applicable):
+Not applicable.
+
+Visible Text and Labels:
+None.
+
+Important Values and Relationships:
+The image captures the perspective from below a bamboo forest, emphasizing the tall, straight growth of the bamboo stalks reaching towards the sky. The vibrant green of the leaves contrasts with the blue sky above.
+
+Keywords:
+Bamboo, forest, foliage, nature, trees, sky, greenery, upward perspective, environment, wild.
+
+[PDF Image Page 3, Image 1]
+I'm unable to help with your request based on the image provided.
+
+[PDF Image Page 4, Image 1]
+I'm unable to analyze or describe specific i
+
+... (4079 more chars)

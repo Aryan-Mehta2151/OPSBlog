@@ -5,6 +5,7 @@ import { FiSearch, FiRefreshCw, FiDatabase, FiPlus, FiTrash2, FiDownload } from 
 import { jsPDF } from 'jspdf';
 import { getApiErrorMessage, notifyError, notifySuccess } from '../utils/toast';
 import './Search.css';
+import './HomePage.css';
 
 interface Source {
   title: string;
@@ -17,6 +18,7 @@ interface Source {
   image_id?: string;
   filename?: string;
   context_image_index?: number;
+  source_pdf_filename?: string;
 }
 
 interface ChatTurn {
@@ -39,6 +41,13 @@ interface StreamResult {
   sources: Source[];
 }
 
+interface InterleavedImageSource {
+  source: Source;
+  blogId: string | null;
+  imageId: string | null;
+  key: string;
+}
+
 const buildConversationTitle = (query: string) => {
   const normalized = query.trim().replace(/\s+/g, ' ');
   if (normalized.length <= 40) {
@@ -57,6 +66,81 @@ const normalizeAnswerText = (text: string) => {
     .replace(/\r\n/g, '\n');
 };
 
+function SourceImagePreview({
+  source,
+  blogId,
+  imageId,
+  onOpen,
+}: {
+  source: Source;
+  blogId: string | null;
+  imageId: string | null;
+  onOpen: (blogId: string, imageId: string, label: string) => void;
+}) {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [loadingImg, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const isImageSource = source.type === 'image' || source.type === 'pdf_embedded_image';
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+
+    const loadPreview = async () => {
+      if (!isImageSource || !blogId || !imageId) return;
+      setLoading(true);
+      setError('');
+      try {
+        const res = await documentsApi.viewImage(blogId, imageId);
+        objectUrl = URL.createObjectURL(res.data);
+        if (active) {
+          setImageUrl(objectUrl);
+        }
+      } catch {
+        if (active) {
+          setError('Failed to load image preview');
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadPreview();
+
+    return () => {
+      active = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [isImageSource, blogId, imageId]);
+
+  if (!isImageSource || !blogId || !imageId) return null;
+
+  return (
+    <div className="source-image-wrap">
+      <div className="source-image-label">
+        {source.type === 'pdf_embedded_image' ? 'Image from PDF' : 'Image match'}
+        {source.source_pdf_filename ? ` • ${source.source_pdf_filename}` : ''}
+      </div>
+      {loadingImg && <div className="source-image-loading">Loading image...</div>}
+      {error && <div className="source-image-error">{error}</div>}
+      {!loadingImg && !error && imageUrl && (
+        <button
+          type="button"
+          className="source-image-button"
+          onClick={() => onOpen(blogId, imageId, source.filename || source.title)}
+        >
+          <img src={imageUrl} alt={source.filename || source.title} className="source-image-inline" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function SearchPage() {
   const { isAdmin, user, loading } = useAuth();
 
@@ -74,11 +158,21 @@ export default function SearchPage() {
   const [chunks, setChunks] = useState<any[]>([]);
   const [showChunks, setShowChunks] = useState(false);
   const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
+  const [imagePreview, setImagePreview] = useState<{ url: string; name: string } | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
+  const chatTopRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     conversationsRef.current = conversations;
   }, [conversations]);
+
+  useEffect(() => {
+    return () => {
+      if (imagePreview?.url) {
+        URL.revokeObjectURL(imagePreview.url);
+      }
+    };
+  }, [imagePreview]);
 
   useEffect(() => {
     if (loading) {
@@ -210,6 +304,54 @@ export default function SearchPage() {
       return data.access_token;
     } catch {
       return null;
+    }
+  };
+
+  const resolveSourceImageRef = (source: Source): { blogId: string | null; imageId: string | null } => {
+    if (source.blog_id && source.image_id) {
+      return { blogId: source.blog_id, imageId: source.image_id };
+    }
+    return { blogId: source.blog_id || null, imageId: source.image_id || null };
+  };
+
+  const getInterleavedImageSources = (sources: Source[]): InterleavedImageSource[] => {
+    const imageSources = sources.filter(
+      (src) => src.type === 'image' || src.type === 'pdf_embedded_image',
+    );
+    const seen = new Set<string>();
+    const collected: InterleavedImageSource[] = [];
+
+    for (const src of imageSources) {
+      const { blogId, imageId } = resolveSourceImageRef(src);
+      if (!blogId || !imageId) continue;
+
+      const key = `${blogId}|${imageId}|${src.filename || src.title}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      collected.push({
+        source: src,
+        blogId,
+        imageId,
+        key,
+      });
+    }
+    return collected;
+  };
+
+  const handleOpenSourceImage = async (blogId: string, imageId: string, label: string) => {
+    try {
+      const res = await documentsApi.viewImage(blogId, imageId);
+      const url = URL.createObjectURL(res.data);
+      setImagePreview((prev) => {
+        if (prev?.url) URL.revokeObjectURL(prev.url);
+        return {
+          url,
+          name: label,
+        };
+      });
+    } catch (err: any) {
+      notifyError(getApiErrorMessage(err, 'Failed to open image source'));
     }
   };
 
@@ -349,6 +491,14 @@ export default function SearchPage() {
     setShowChunks(false);
     setError('');
     setQuestion('');
+
+    // Scroll so the newest question card sits just below sticky headers.
+    setTimeout(() => {
+      const el = chatTopRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top + window.scrollY - 88;
+      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    }, 50);
 
     try {
       await persistConversation(updatedConversation);
@@ -637,6 +787,7 @@ export default function SearchPage() {
   const activeTurns = activeConversation?.turns ?? [];
 
   return (
+    <>
     <div className="search-page">
       <aside className="search-sidebar">
         <button type="button" className="btn btn-primary search-new-chat" onClick={handleNewChat} disabled={searching}>
@@ -731,7 +882,7 @@ export default function SearchPage() {
                   <div className="chunk-meta">
                     Type: {chunk.metadata?.type || 'text'} &middot; Blog: {chunk.metadata?.title || 'Unknown'}
                   </div>
-                  <div className="chunk-text">{chunk.text?.substring(0, 200)}...</div>
+                  <div className="chunk-text">{chunk.text}</div>
                 </div>
               ))}
             </div>
@@ -740,7 +891,7 @@ export default function SearchPage() {
           activeTurns.length > 0 ? (
             <div className="search-chat">
               {activeTurns.map((turn, turnIndex) => (
-                <div key={turn.id} className="search-turn">
+                <div key={turn.id} className="search-turn" ref={turnIndex === 0 ? chatTopRef : undefined}>
                   <div className="search-question-card">
                     <h3>You asked</h3>
                     <div className="answer-text">{turn.question}</div>
@@ -759,8 +910,71 @@ export default function SearchPage() {
                       </button>
                     </div>
                     <div className="answer-text">
-                      {normalizeAnswerText(turn.answer)}
-                      {searching && activeTurnId === turn.id && <span className="cursor-blink">|</span>}
+                      {(() => {
+                        const normalizedAnswer = normalizeAnswerText(turn.answer);
+                        const interleavedImages = getInterleavedImageSources(turn.sources);
+                        const imageByContextIndex = new Map<number, InterleavedImageSource>();
+                        for (const entry of interleavedImages) {
+                          const idx = entry.source.context_image_index;
+                          if (typeof idx === 'number') {
+                            imageByContextIndex.set(idx, entry);
+                          }
+                        }
+
+                        const IMAGE_MARKER = /\[Image\s+(\d+)(?:\s*[—–\-][^\]]*)?\]/gi;
+                        const segments: Array<{ text: string; imageNum?: number }> = [];
+                        let lastIndex = 0;
+                        let m: RegExpExecArray | null;
+                        IMAGE_MARKER.lastIndex = 0;
+                        while ((m = IMAGE_MARKER.exec(normalizedAnswer)) !== null) {
+                          if (m.index > lastIndex) {
+                            segments.push({ text: normalizedAnswer.slice(lastIndex, m.index) });
+                          }
+                          segments.push({ text: '', imageNum: parseInt(m[1], 10) });
+                          lastIndex = m.index + m[0].length;
+                        }
+                        if (lastIndex < normalizedAnswer.length) {
+                          segments.push({ text: normalizedAnswer.slice(lastIndex) });
+                        }
+
+                        let inlineImageCounter = 0;
+
+                        return (
+                          <>
+                            {segments.length > 1 || (segments.length === 1 && segments[0].imageNum !== undefined) ? (
+                              segments.map((seg, si) => {
+                                if (seg.imageNum !== undefined) {
+                                  const entry = imageByContextIndex.get(seg.imageNum);
+                                  if (entry) {
+                                    inlineImageCounter += 1;
+                                    return (
+                                      <div key={`img-block-${turn.id}-${entry.key}`} className="chat-interleaved-image-block">
+                                        <div className="chat-interleaved-image-head">Image {inlineImageCounter}</div>
+                                        <SourceImagePreview
+                                          source={entry.source}
+                                          blogId={entry.blogId}
+                                          imageId={entry.imageId}
+                                          onOpen={handleOpenSourceImage}
+                                        />
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                }
+                                return seg.text
+                                  ? <p key={`${turn.id}-seg-${si}`}>{seg.text}</p>
+                                  : null;
+                              })
+                            ) : (
+                              normalizedAnswer.split(/\n\s*\n/).filter(Boolean).map((p, pi) => (
+                                <p key={`${turn.id}-p-${pi}`}>{p.trim()}</p>
+                              ))
+                            )}
+                            {/* Images are ONLY shown when the LLM explicitly references them with [Image N] markers. */}
+                            {searching && activeTurnId === turn.id && <span className="cursor-blink">|</span>}
+                          </>
+                        );
+                      })()}
                     </div>
 
                     {turn.sources.length > 0 && (
@@ -772,16 +986,25 @@ export default function SearchPage() {
                         {expandedSources[turn.id] && (
                           <div className="sources-section">
                             <h3>Sources ({turn.sources.length})</h3>
-                            {turn.sources.map((src, i) => (
-                              <div key={i} className="source-card">
-                                <div className="source-title">{src.title}</div>
-                                <div className="source-meta">
-                                  By {src.author} &middot; {src.organization}
-                                  {src.created_at && <> &middot; {new Date(src.created_at).toLocaleDateString()}</>}
+                            {turn.sources.map((src, i) => {
+                              const { blogId, imageId } = resolveSourceImageRef(src);
+                              return (
+                                <div key={i} className="source-card">
+                                  <div className="source-title">{src.title}</div>
+                                  <div className="source-meta">
+                                    By {src.author} &middot; {src.organization}
+                                    {src.created_at && <> &middot; {new Date(src.created_at).toLocaleDateString()}</>}
+                                  </div>
+                                  <SourceImagePreview
+                                    source={src}
+                                    blogId={blogId}
+                                    imageId={imageId}
+                                    onOpen={handleOpenSourceImage}
+                                  />
+                                  <div className="source-chunk">{src.chunk_text}</div>
                                 </div>
-                                <div className="source-chunk">{src.chunk_text}</div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -804,5 +1027,22 @@ export default function SearchPage() {
         )}
       </div>
     </div>
+    {imagePreview && (
+      <div className="image-modal-backdrop" onClick={() => setImagePreview(null)}>
+        <div className="image-modal-content" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="image-modal-close"
+            onClick={() => setImagePreview(null)}
+            aria-label="Close image preview"
+          >
+            ×
+          </button>
+          <div className="image-modal-label">{imagePreview.name}</div>
+          <img src={imagePreview.url} alt={imagePreview.name} className="image-modal-img" />
+        </div>
+      </div>
+    )}
+    </>
   );
 }

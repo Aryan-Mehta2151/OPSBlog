@@ -1,0 +1,375 @@
+﻿
+======================================================================
+SIMULATING QUERY: 'give me jungle images'
+shown_image_ids: None
+======================================================================
+
+--- Step 1: Semantic search returned 12 chunks ---
+  [0] type=pdf dist=1.0854 file=image_heavy_pdf.pdf
+      Keywords: Landscape, lake, forest, mountains, nature, reflections, trees, snow-c...
+  [1] type=pdf dist=1.0969 file=image_heavy_pdf.pdf
+      [PDF Image Page 4, Image 1] I'm unable to analyze or describe specific images em...
+  [2] type=pdf dist=1.1589 file=image_heavy_pdf.pdf
+      Image-Heavy PDF  Prepared By: Website:  Sample Team sample-files.com  Bs  oo.   ...
+  [3] type=pdf dist=1.1654 file=image_heavy_pdf.pdf
+      PDF: image_heavy_pdf.pdf Blog: image_heavy_pdf.pdf  Sample Team Prepared By: sam...
+  [4] type=pdf_embedded_image dist=1.1696 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg Blog: image_heav...
+  [5] type=pdf_embedded_image dist=1.1823 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg Blog: image_heav...
+  [6] type=pdf dist=1.1836 file=image_heavy_pdf.pdf
+      [PDF Image Page 2, Image 1] Primary Subject: Waterfall in a forest setting  Seco...
+  [7] type=pdf_embedded_image dist=1.2072 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg Blog: image_heav...
+  [8] type=pdf_embedded_image dist=1.2206 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i3.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i3.jpeg Blog: image_heav...
+  [9] type=pdf_embedded_image dist=1.2380 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i1.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i1.jpeg Blog: image_heav...
+  [10] type=pdf_embedded_image dist=1.2456 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i1.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i1.jpeg Blog: image_heav...
+  [11] type=pdf_embedded_image dist=1.2495 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p6_i1.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p6_i1.jpeg Blog: image_heav...
+
+--- Step 2: 5 text sources ---
+
+--- Step 3: Image embedding search returned 5 -> 5 after exclusion ---
+  [0] dist=1.1707 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg subject=Zebra
+  [1] dist=1.1835 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg subject=Tarsier
+  [2] dist=1.2083 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg subject=Lake with surrounding pine forest
+  [3] dist=1.2218 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i3.jpeg subject=Bamboo
+  [4] dist=1.2392 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i1.jpeg subject=Cheetah
+
+--- Step 5a: 2 cleaned text chunks ---
+
+  TEXT CHUNK 1 (922 chars):
+  Image-Heavy
+PDF
+
+Prepared By: Website:
+
+Sample Team sample-files.com
+
+Bs
+
+oo.
+
+
+Nature Landscape
+
+A beautiful landscape showcasing the wonders of
+nature.
+
+This sample PDF file is provided by . Visit us for more sample files and resource.
+
+City Skyline
+
+A high-resolution image of a bustling city skyl...
+
+  TEXT CHUNK 2 (995 chars):
+  PDF: image_heavy_pdf.pdf
+Blog: image_heavy_pdf.pdf
+
+Sample Team
+Prepared By:
+sample-files.com
+Image-Heavy
+PDF
+Website:
+Nature Landscape
+A beautiful landscape showcasing the wonders of
+nature.
+This sample PDF file is provided by Sample-Files.com. Visit us for more sample files and resource.
+City Skyl...
+
+--- Step 5b: 5 labeled image chunks ---
+  [Image 1 ù Zebra | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg]
+  [Image 2 ù Tarsier | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg]
+  [Image 3 ù Lake with surrounding pine forest | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg]
+  [Image 4 ù Bamboo | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i3.jpeg]
+  [Image 5 ù Cheetah | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i1.jpeg]
+
+--- FINAL CONTEXT sent to LLM (6660 chars, 9 sections) ---
+  Text sections: 2
+  Image sections: 5
+
+--- FULL PROMPT (first 3000 chars) ---
+RESPONSE STYLE: Give a clear, natural answer in plain conversational prose. Use short paragraphs only.
+
+USER MESSAGE: give me jungle images
+
+BLOG CONTENT (use only if the user asks a real question):
+=== MATCHED IMAGES (describe each using ONLY the text under its [Image N] label) ===
+
+[Image 1 ù Zebra | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg]
+Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg
+Blog: image_heavy_pdf.pdf
+Source PDF: image_heavy_pdf.pdf
+Image Description: Primary Subject:
+- Zebra
+
+Secondary Subjects:
+- Wildebeests, birds, grass, bushes
+
+Category Signals:
+- Domain: wildlife
+- Keywords: zebra, wildebeest, savanna, herd, grassland, African wildlife, mammals, grazing animals, safari, nature scene
+
+Visible Text (OCR):
+- None
+
+Scene and Attributes:
+- A zebra stands in profile in a grassy savanna, surrounded by a group of wildebeests. Birds are seen walking on the ground. The background includes green shrubs and trees under a clear sky.
+
+Structured Facts:
+- None
+
+Disambiguation:
+- None needed; both zebra and wildebeest are clearly identifiable by their distinctive patterns and features.
+
+[Image 2 ù Tarsier | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg]
+Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg
+Blog: image_heavy_pdf.pdf
+Source PDF: image_heavy_pdf.pdf
+Image Description: Primary Subject:
+- Tarsier
+
+Secondary Subjects:
+- Tree branch
+
+Category Signals:
+- Domain: wildlife
+- Tarsier, primate, large eyes, tree, fur, close-up, nature, habitat, wildlife, tropical, jungle, environment, Philippines, arboreal
+
+Visible Text (OCR):
+- None
+
+Scene and Attributes:
+- The tarsier is clinging to a tree branch with its body curled around the branch. Its large eyes are prominent and facing the camera. The background is a blurred natural setting, with green foliage indicating a jungle environment.
+
+Structured Facts:
+- No structured facts present.
+
+Disambiguation:
+- Not to be confused with lemur or bushbaby, recognized by its distinctively large eyes and small size.
+
+[Image 3 ù Lake with surrounding pine forest | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg]
+Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg
+Blog: image_heavy_pdf.pdf
+Source PDF: image_heavy_pdf.pdf
+Image Description: Primary Subject:
+- Lake with surrounding pine forest
+
+Secondary Subjects:
+- Snow-capped mountains, pine trees, cloudy sky
+
+Category Signals:
+- Domain: wildlife
+- Keywords: lake, pine trees, mountains, forest, reflection, snow-capped, nature, landscape, serenity, outdoor, scenic, tranquil, greenery, natural habitat
+
+Visible Text (OCR):
+- None
+
+Scene and Attributes:
+- Calm lake with reflections of pine trees and mountains. Snow-capped peaks in background under a cloudy sky. Dense forest encircles the water. Grassy area in the foreground. 
+
+Structured Facts:
+- None
+
+Disambiguation:
+- Not a tropical rainforest due to the presence of snow-capped mountains.
+
+[Image 4 ù Bamboo | file: 
+
+... (3859 more chars)
+
+######################################################################
+# SECOND QUERY: 'give me more' (with shown_image_ids from first query)
+######################################################################
+
+======================================================================
+SIMULATING QUERY: 'give me jungle images give me more'
+shown_image_ids: ['pdf_embedded_image|69defe85-3ee9-4057-a23d-ef5930174071|02459ecc-6d6c-4256-b95c-97583655a203|pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg', 'pdf_embedded_image|69defe85-3ee9-4057-a23d-ef5930174071|7c861bf5-8513-4135-b10e-d1ef78e65b3e|pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg', 'pdf_embedded_image|69defe85-3ee9-4057-a23d-ef5930174071|9a731baf-116f-47e5-adac-1a1b14fe0c21|pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg', 'pdf_embedded_image|69defe85-3ee9-4057-a23d-ef5930174071|5a88a3de-3149-4b34-b9bb-f94a41bec3e6|pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i3.jpeg', 'pdf_embedded_image|69defe85-3ee9-4057-a23d-ef5930174071|06b02fe9-f204-4325-8dba-c782487782a9|pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i1.jpeg']
+======================================================================
+
+--- Step 1: Semantic search returned 12 chunks ---
+  [0] type=pdf dist=1.1662 file=image_heavy_pdf.pdf
+      Keywords: Landscape, lake, forest, mountains, nature, reflections, trees, snow-c...
+  [1] type=pdf dist=1.2080 file=image_heavy_pdf.pdf
+      [PDF Image Page 4, Image 1] I'm unable to analyze or describe specific images em...
+  [2] type=pdf dist=1.2574 file=image_heavy_pdf.pdf
+      Image-Heavy PDF  Prepared By: Website:  Sample Team sample-files.com  Bs  oo.   ...
+  [3] type=pdf dist=1.2659 file=image_heavy_pdf.pdf
+      [PDF Image Page 2, Image 1] Primary Subject: Waterfall in a forest setting  Seco...
+  [4] type=pdf dist=1.2780 file=image_heavy_pdf.pdf
+      PDF: image_heavy_pdf.pdf Blog: image_heavy_pdf.pdf  Sample Team Prepared By: sam...
+  [5] type=pdf_embedded_image dist=1.2800 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg Blog: image_heav...
+  [6] type=pdf_embedded_image dist=1.3044 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg Blog: image_heav...
+  [7] type=pdf_embedded_image dist=1.3058 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg Blog: image_heav...
+  [8] type=pdf_embedded_image dist=1.3139 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i3.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i3.jpeg Blog: image_heav...
+  [9] type=pdf dist=1.3144 file=image_heavy_pdf.pdf
+      **Numbers and Units:** *None present*  [PDF Image Page 1, Image 1] Primary Subje...
+  [10] type=pdf_embedded_image dist=1.3260 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i1.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i1.jpeg Blog: image_heav...
+  [11] type=pdf_embedded_image dist=1.3377 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i1.jpeg
+      Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i1.jpeg Blog: image_heav...
+
+--- Step 2: 6 text sources ---
+  [FALLBACK] All images were excluded, re-including previously shown images
+
+--- Step 3: Image embedding search returned 5 -> 5 after exclusion ---
+  [0] dist=1.2800 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg subject=Zebra
+  [1] dist=1.3044 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg subject=Lake with surrounding pine forest
+  [2] dist=1.3058 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg subject=Tarsier
+  [3] dist=1.3139 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i3.jpeg subject=Bamboo
+  [4] dist=1.3260 file=pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i1.jpeg subject=Cheetah
+
+--- Step 5a: 3 cleaned text chunks ---
+
+  TEXT CHUNK 1 (922 chars):
+  Image-Heavy
+PDF
+
+Prepared By: Website:
+
+Sample Team sample-files.com
+
+Bs
+
+oo.
+
+
+Nature Landscape
+
+A beautiful landscape showcasing the wonders of
+nature.
+
+This sample PDF file is provided by . Visit us for more sample files and resource.
+
+City Skyline
+
+A high-resolution image of a bustling city skyl...
+
+  TEXT CHUNK 2 (995 chars):
+  PDF: image_heavy_pdf.pdf
+Blog: image_heavy_pdf.pdf
+
+Sample Team
+Prepared By:
+sample-files.com
+Image-Heavy
+PDF
+Website:
+Nature Landscape
+A beautiful landscape showcasing the wonders of
+nature.
+This sample PDF file is provided by Sample-Files.com. Visit us for more sample files and resource.
+City Skyl...
+
+  TEXT CHUNK 3 (37 chars):
+  **Numbers and Units:**
+*None present*...
+
+--- Step 5b: 5 labeled image chunks ---
+  [Image 1 ù Zebra | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg]
+  [Image 2 ù Lake with surrounding pine forest | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg]
+  [Image 3 ù Tarsier | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg]
+  [Image 4 ù Bamboo | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i3.jpeg]
+  [Image 5 ù Cheetah | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i1.jpeg]
+
+--- FINAL CONTEXT sent to LLM (6699 chars, 10 sections) ---
+  Text sections: 3
+  Image sections: 5
+
+--- FULL PROMPT (first 3000 chars) ---
+RESPONSE STYLE: Give a clear, natural answer in plain conversational prose. Use short paragraphs only.
+
+USER MESSAGE: give me jungle images give me more
+
+BLOG CONTENT (use only if the user asks a real question):
+=== MATCHED IMAGES (describe each using ONLY the text under its [Image N] label) ===
+
+[Image 1 ù Zebra | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg]
+Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i3.jpeg
+Blog: image_heavy_pdf.pdf
+Source PDF: image_heavy_pdf.pdf
+Image Description: Primary Subject:
+- Zebra
+
+Secondary Subjects:
+- Wildebeests, birds, grass, bushes
+
+Category Signals:
+- Domain: wildlife
+- Keywords: zebra, wildebeest, savanna, herd, grassland, African wildlife, mammals, grazing animals, safari, nature scene
+
+Visible Text (OCR):
+- None
+
+Scene and Attributes:
+- A zebra stands in profile in a grassy savanna, surrounded by a group of wildebeests. Birds are seen walking on the ground. The background includes green shrubs and trees under a clear sky.
+
+Structured Facts:
+- None
+
+Disambiguation:
+- None needed; both zebra and wildebeest are clearly identifiable by their distinctive patterns and features.
+
+[Image 2 ù Lake with surrounding pine forest | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg]
+Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p2_i2.jpeg
+Blog: image_heavy_pdf.pdf
+Source PDF: image_heavy_pdf.pdf
+Image Description: Primary Subject:
+- Lake with surrounding pine forest
+
+Secondary Subjects:
+- Snow-capped mountains, pine trees, cloudy sky
+
+Category Signals:
+- Domain: wildlife
+- Keywords: lake, pine trees, mountains, forest, reflection, snow-capped, nature, landscape, serenity, outdoor, scenic, tranquil, greenery, natural habitat
+
+Visible Text (OCR):
+- None
+
+Scene and Attributes:
+- Calm lake with reflections of pine trees and mountains. Snow-capped peaks in background under a cloudy sky. Dense forest encircles the water. Grassy area in the foreground. 
+
+Structured Facts:
+- None
+
+Disambiguation:
+- Not a tropical rainforest due to the presence of snow-capped mountains.
+
+[Image 3 ù Tarsier | file: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg]
+Image: pdfembed_c5d4efe3-05b7-43f0-8b42-9f4451a809e4_p4_i2.jpeg
+Blog: image_heavy_pdf.pdf
+Source PDF: image_heavy_pdf.pdf
+Image Description: Primary Subject:
+- Tarsier
+
+Secondary Subjects:
+- Tree branch
+
+Category Signals:
+- Domain: wildlife
+- Tarsier, primate, large eyes, tree, fur, close-up, nature, habitat, wildlife, tropical, jungle, environment, Philippines, arboreal
+
+Visible Text (OCR):
+- None
+
+Scene and Attributes:
+- The tarsier is clinging to a tree branch with its body curled around the branch. Its large eyes are prominent and facing the camera. The background is a blurred natural setting, with green foliage indicating a jungle environment.
+
+Structured Facts:
+- No structured facts present.
+
+Disambiguation:
+- Not to be confused with lemur or bushbaby, recognized by its distinctively large eyes and small size.
+
+[Image 4 ù Ba
+
+... (3911 more chars)

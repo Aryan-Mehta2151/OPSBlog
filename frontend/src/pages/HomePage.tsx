@@ -571,6 +571,8 @@ export default function HomePage() {
     return { answer: fullAnswer, sources: finalSources };
   };
 
+  const chatTopRef = useRef<HTMLDivElement>(null);
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     const query = question.trim();
@@ -600,6 +602,14 @@ export default function HomePage() {
     setIndexMsg('');
     setChatError('');
     setQuestion('');
+
+    // Scroll so the newest question card sits just below sticky headers.
+    setTimeout(() => {
+      const el = chatTopRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top + window.scrollY - 88;
+      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    }, 50);
 
     try {
       await persistConversation(updated);
@@ -800,23 +810,8 @@ export default function HomePage() {
         writeAnswerText(normalizedAnswer);
       }
 
-      // Match chat UI behavior exactly:
-      // - when markers exist, show only referenced images
-      // - when markers do not exist, append retrieved images
-      if (!hasMarkers) {
-        for (const entry of interleavedImages) {
-          const idx = entry.source.context_image_index;
-          if (typeof idx === 'number' && referencedNums.has(idx)) {
-            continue;
-          }
-          try {
-            pdfImageCounter += 1;
-            await drawInlineImage(entry, pdfImageCounter);
-          } catch {
-            // Continue with remaining content even if one image fails.
-          }
-        }
-      }
+      // PDF export: only include images that the LLM explicitly referenced
+      // with [Image N] markers — no fallback rendering of all source images.
 
       const slug = (turn.question || 'answer')
         .toLowerCase()
@@ -1126,7 +1121,7 @@ export default function HomePage() {
                   <div key={i} className="chunk-card">
                     <div className="chunk-id">{chunk.id}</div>
                     <div className="chunk-meta">Type: {chunk.metadata?.type || 'text'} &middot; {chunk.metadata?.title || 'Unknown'}</div>
-                    <div className="chunk-text">{chunk.text?.substring(0, 200)}...</div>
+                    <div className="chunk-text">{chunk.text}</div>
                   </div>
                 ))}
               </div>
@@ -1135,7 +1130,7 @@ export default function HomePage() {
             activeTurns.length > 0 ? (
               <div className="search-chat">
                 {activeTurns.map((turn, turnIndex) => (
-                  <div key={turn.id} className="search-turn">
+                  <div key={turn.id} className="search-turn" ref={turnIndex === 0 ? chatTopRef : undefined}>
                     <div className="search-question-card">
                       <div className="chat-card-header">
                         <h3>You asked</h3>
@@ -1218,8 +1213,6 @@ export default function HomePage() {
                           segments.push({ text: normalizedAnswer.slice(lastIndex) });
                         }
 
-                        const referencedNums = new Set<number>();
-                        const hasMarkers = segments.some((s) => s.imageNum !== undefined);
                         let inlineImageCounter = 0;
 
                         return (
@@ -1229,7 +1222,6 @@ export default function HomePage() {
                                 if (seg.imageNum !== undefined) {
                                   const entry = imageByContextIndex.get(seg.imageNum);
                                   if (entry) {
-                                    referencedNums.add(seg.imageNum);
                                     inlineImageCounter += 1;
                                     return renderVisualBlock(entry, inlineImageCounter);
                                   }
@@ -1245,13 +1237,7 @@ export default function HomePage() {
                                 <p key={`${turn.id}-p-${pi}`}>{p.trim()}</p>
                               ))
                             )}
-                            {/* If no markers exist, fallback to showing retrieved images; otherwise keep strict marker alignment. */}
-                            {!hasMarkers && interleavedImages
-                              .filter(e => typeof e.source.context_image_index !== 'number' || !referencedNums.has(e.source.context_image_index))
-                              .map((entry) => {
-                                inlineImageCounter += 1;
-                                return renderVisualBlock(entry, inlineImageCounter);
-                              })}
+                            {/* Images are ONLY shown when the LLM explicitly references them with [Image N] markers. */}
                             {searching && activeTurnId === turn.id && <span className="cursor-blink">|</span>}
                           </div>
                         );

@@ -5,7 +5,7 @@ import uuid
 import re
 from typing import Optional
 import chromadb
-from langchain_text_splitters import RecursiveCharacterTextSplitter  # type: ignore
+from langchain_text_splitters import RecursiveCharacterTextSplitter, MarkdownHeaderTextSplitter  # type: ignore
 from sqlalchemy.orm import Session
 from app.db.models import BlogPost, User, Organization, PdfDocument, ImageDocument
 from typing import List, Dict, Any
@@ -26,8 +26,14 @@ def _get_env_int(name: str, default: int) -> int:
 OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 OPENAI_IMAGE_VISION_MODEL = os.getenv("OPENAI_IMAGE_VISION_MODEL", "gpt-4o")
 OPENAI_PDF_VISION_MODEL = os.getenv("OPENAI_PDF_VISION_MODEL", "gpt-4o")
+OPENAI_CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o")
 PDF_VISION_MAX_PAGES = _get_env_int("PDF_VISION_MAX_PAGES", 25)
 PDF_VISION_MAX_IMAGES = _get_env_int("PDF_VISION_MAX_IMAGES", 30)
+# Minimum number of vector drawing elements on a page (with 0 raster images) to
+# treat the page as containing a diagram that should be rendered to an image.
+VECTOR_DIAGRAM_MIN_DRAWINGS = _get_env_int("VECTOR_DIAGRAM_MIN_DRAWINGS", 15)
+IMAGE_OCR_MAX_CHARS = _get_env_int("IMAGE_OCR_MAX_CHARS", 4000)
+IMAGE_OCR_MAX_EXTRA_CHUNKS = _get_env_int("IMAGE_OCR_MAX_EXTRA_CHUNKS", 2)
 
 IMAGE_RETRIEVAL_VISION_PROMPT = """
 You are generating retrieval text for one image.
@@ -86,6 +92,8 @@ Return plain text with these sections:
 Primary Subject:
 Secondary Subjects:
 Chart/Diagram Type (if applicable):
+Functional Intent:
+Diagram Semantics:
 Visible Text and Labels:
 Important Values and Relationships:
 Keywords:
@@ -95,6 +103,13 @@ Rules:
 - Extract text exactly where possible.
 - Include domain clues (for example wildlife, astronomy, urban, medical, finance).
 - Mark uncertain reads with [uncertain: ...].
+- For diagrams, explain actors/entities/processes/stores/components and how they connect.
+- For non-diagram visuals, explain what task or concept the image supports.
+- For software/UML-style diagrams, classify Chart/Diagram Type using one of:
+    use case diagram, sequence diagram, class diagram, activity diagram, state diagram,
+    component diagram, deployment diagram, ER diagram, data flow diagram, flowchart, other diagram.
+- If you see actors/stick figures interacting with ovals/use-cases, or labels like <<include>> / <<extend>>,
+    classify as "use case diagram".
 """.strip()
 
 IMAGE_DOMAIN_KEYWORDS = {
@@ -118,6 +133,22 @@ IMAGE_TAG_STOPWORDS = {
     "images", "photo", "picture", "blog", "content", "description", "text", "visible", "label",
     "table", "value", "values", "entity", "entities", "extract", "extracted", "shows", "showing",
 }
+
+_SECTION_CAPTURE_TEMPLATE = r"{name}[:\s]*[-\s]*(.*?)(?=\n\s*(?:{next_names})[:\s]*|\Z)"
+_VISION_SECTION_NAMES = [
+    "Primary Subject",
+    "Secondary Subjects",
+    "Category Signals",
+    "Visible Text (OCR)",
+    "Visible Text and Labels",
+    "Scene and Attributes",
+    "Structured Facts",
+    "Chart/Diagram Type (if applicable)",
+    "Chart/Diagram Type",
+    "Important Values and Relationships",
+    "Keywords",
+    "Disambiguation",
+]
 try:
     import pytesseract
     from PIL import Image
@@ -199,6 +230,93 @@ class VectorService:
             length_function=len,
         )
 
+    @staticmethod
+    def _is_heading_line(line: str) -> bool:
+        """Heuristic heading detection for markdown and numbered requirement docs."""
+        stripped = (line or "").strip()
+        if not stripped:
+            return False
+
+        # Markdown headings
+        if stripped.startswith("#"):
+            return True
+
+        # Numbered headings like "3.2 Functional Requirements"
+        if re.match(r"^\d+(?:\.\d+){0,4}\s+.+$", stripped):
+            return True
+
+        # Common all-caps style headings from extracted PDFs
+        if stripped.isupper() and 4 <= len(stripped) <= 120:
+            return True
+
+        # Colon-terminated section headings
+        if stripped.endswith(":") and len(stripped.split()) <= 10:
+            return True
+
+        return False
+
+    def _split_with_section_context(self, full_text: str, default_section: str = "General") -> tuple[List[str], List[str], List[str]]:
+        """Split text while injecting nearest section heading into every child chunk.
+
+        Returns:
+            chunk_texts: list of contextualized chunks
+            section_labels: list of hierarchical section labels aligned with chunk_texts
+            exact_headings: list of nearest exact heading lines aligned with chunk_texts
+        """
+        lines = full_text.splitlines()
+        sections: List[tuple[str, str, str]] = []
+        current_heading = default_section
+        current_path = default_section
+        current_lines: List[str] = []
+        numbered_stack: List[str] = []
+
+        for line in lines:
+            if self._is_heading_line(line):
+                if current_lines:
+                    body = "\n".join(current_lines).strip()
+                    if body:
+                        sections.append((current_heading, current_path, body))
+                    current_lines = []
+                heading_text = line.strip().lstrip("#").strip()
+                numbered_match = re.match(r"^(\d+(?:\.\d+){0,8})\s+(.+)$", heading_text)
+                if numbered_match:
+                    heading_num = numbered_match.group(1)
+                    heading_title = numbered_match.group(2).strip()
+                    depth = heading_num.count(".") + 1
+                    numbered_stack = numbered_stack[: max(0, depth - 1)]
+                    numbered_stack.append(f"{heading_num} {heading_title}")
+                    current_path = " > ".join(numbered_stack)
+                else:
+                    current_path = heading_text or default_section
+                current_heading = heading_text or default_section
+                continue
+            current_lines.append(line)
+
+        if current_lines:
+            body = "\n".join(current_lines).strip()
+            if body:
+                sections.append((current_heading, current_path, body))
+
+        # Fallback when no headings were detected
+        if not sections:
+            raw_chunks = self.text_splitter.split_text(full_text)
+            contextualized = [f"Section Context: {default_section}\n\n{c}" for c in raw_chunks]
+            labels = [default_section for _ in raw_chunks]
+            exacts = [default_section for _ in raw_chunks]
+            return contextualized, labels, exacts
+
+        chunk_texts: List[str] = []
+        section_labels: List[str] = []
+        exact_headings: List[str] = []
+        for heading, heading_path, section_text in sections:
+            section_chunks = self.text_splitter.split_text(section_text)
+            for chunk in section_chunks:
+                chunk_texts.append(f"Section Context: {heading_path}\n\n{chunk}")
+                section_labels.append(heading_path)
+                exact_headings.append(heading)
+
+        return chunk_texts, section_labels, exact_headings
+
     def _reset_collection(self):
         """Recreate the collection when stored embedding dimension is incompatible."""
         try:
@@ -242,11 +360,37 @@ class VectorService:
         """Chunk blog content and preserve metadata"""
         chunks = []
 
-        # Combine title and content for better context
-        full_text = f"Title: {blog_data['title']}\n\nContent: {blog_data['content']}"
+        # Blog content is Markdown — use header-aware splitter to get proper section boundaries.
+        md_splitter = MarkdownHeaderTextSplitter(
+            headers_to_split_on=[("#", "H1"), ("##", "H2"), ("###", "H3"), ("####", "H4")],
+            strip_headers=False,
+        )
+        md_docs = md_splitter.split_text(
+            f"# {blog_data['title']}\n\n{blog_data['content'] or ''}"
+        )
 
-        # Split the text
-        text_chunks = self.text_splitter.split_text(full_text)
+        text_chunks: List[str] = []
+        section_labels: List[str] = []
+        exact_headings: List[str] = []
+
+        for md_doc in md_docs:
+            # Build breadcrumb label from header hierarchy (H1 > H2 > H3 …)
+            headers = md_doc.metadata or {}
+            label_parts = [headers[k] for k in ("H1", "H2", "H3", "H4") if headers.get(k)]
+            section_label = " > ".join(label_parts) if label_parts else blog_data["title"]
+            context_prefix = f"Section Context: {section_label}\n\n"
+            # Sub-split long sections so no chunk exceeds the configured size.
+            for sub in self.text_splitter.split_text(md_doc.page_content):
+                text_chunks.append(context_prefix + sub)
+                section_labels.append(section_label)
+                exact_headings.append(section_label)
+
+        # Fallback for plain-text blogs with no markdown headings
+        if not text_chunks:
+            text_chunks, section_labels, exact_headings = self._split_with_section_context(
+                f"{blog_data['title']}\n\n{blog_data['content'] or ''}",
+                default_section=blog_data["title"],
+            )
 
         for i, chunk in enumerate(text_chunks):
             chunks.append({
@@ -256,6 +400,8 @@ class VectorService:
                 "text": chunk,
                 "metadata": {
                     "title": blog_data["title"],
+                    "section_heading": section_labels[i] if i < len(section_labels) else "",
+                    "section_heading_exact": exact_headings[i] if i < len(exact_headings) else "",
                     "author_email": blog_data["author_email"],
                     "author_id": blog_data["author_id"],
                     "org_name": blog_data["org_name"],
@@ -425,17 +571,21 @@ class VectorService:
         try:
             doc = fitz.open(file_path)
 
-            # First pass: embedded/selectable text
+            # First pass: embedded/selectable text (best quality for exact headings)
             text = ""
             for page in doc:
                 text += page.get_text()
             extracted_parts = []
-            if text.strip():
+            embedded_text_len = len(text.strip())
+            if embedded_text_len:
                 extracted_parts.append(text)
 
-            # Fallback for scanned/image-only PDFs
-            if OCR_AVAILABLE:
-                print(f"No embedded text in PDF {file_path}; trying OCR fallback")
+            # Only run OCR/vision fallback when embedded text is missing or too weak.
+            # This avoids flooding chunks with noisy OCR templates for text-native PDFs.
+            needs_fallback_ocr = embedded_text_len < 500
+
+            if needs_fallback_ocr and OCR_AVAILABLE:
+                print(f"No/low embedded text in PDF {file_path}; trying OCR fallback")
                 ocr_text = ""
                 for page in doc:
                     try:
@@ -450,16 +600,16 @@ class VectorService:
                 if ocr_text.strip():
                     extracted_parts.append(ocr_text)
 
-            # High-quality vision OCR pass for scanned/mobile PDFs
-            vision_text = self._extract_text_from_pdf_with_vision(doc, file_path)
-            if vision_text.strip():
-                extracted_parts.append(vision_text)
+            # High-quality vision OCR pass for scanned/mobile PDFs (fallback only)
+            if needs_fallback_ocr:
+                vision_text = self._extract_text_from_pdf_with_vision(doc, file_path)
+                if vision_text.strip():
+                    extracted_parts.append(vision_text)
 
             # Extract text/semantics from embedded images inside the PDF
             pdf_image_text = self._extract_pdf_images_with_vision(doc, file_path)
             if pdf_image_text.strip():
                 extracted_parts.append(pdf_image_text)
-
             if extracted_parts:
                 return "\n\n".join(part for part in extracted_parts if part and part.strip())
 
@@ -511,7 +661,7 @@ class VectorService:
                                 ],
                             }
                         ],
-                        max_tokens=1200,
+                        max_tokens=5000,
                     )
 
                     page_text = (response.choices[0].message.content or "").strip()
@@ -541,7 +691,9 @@ class VectorService:
             client = OpenAI(api_key=api_key)
             image_notes = []
             processed_images = 0
+            pages_with_raster: set = set()
 
+            # --- Pass 1: raster images ---
             for page_idx in range(len(doc)):
                 page = doc[page_idx]
                 page_images = page.get_images(full=True)
@@ -585,7 +737,7 @@ class VectorService:
                                     ],
                                 }
                             ],
-                            max_tokens=900,
+                            max_tokens=5000,
                         )
 
                         image_text = (response.choices[0].message.content or "").strip()
@@ -594,11 +746,62 @@ class VectorService:
                                 f"[PDF Image Page {page_idx + 1}, Image {img_idx + 1}]\n{image_text}"
                             )
                         processed_images += 1
+                        pages_with_raster.add(page_idx)
                     except Exception as image_err:
                         print(f"Vision extraction failed for PDF image on page {page_idx + 1}: {image_err}")
 
                 if processed_images >= PDF_VISION_MAX_IMAGES:
                     break
+
+            # --- Pass 2: vector diagram pages (rendered) ---
+            for page_idx in range(len(doc)):
+                if processed_images >= PDF_VISION_MAX_IMAGES:
+                    break
+                if page_idx in pages_with_raster:
+                    continue
+
+                page = doc[page_idx]
+                try:
+                    drawings = page.get_drawings()
+                except Exception:
+                    drawings = []
+
+                if len(drawings) < VECTOR_DIAGRAM_MIN_DRAWINGS:
+                    continue
+
+                try:
+                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+                    image_bytes = pix.tobytes("png")
+                    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+                    response = client.chat.completions.create(
+                        model=OPENAI_PDF_VISION_MODEL,
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": PDF_EMBEDDED_IMAGE_VISION_PROMPT,
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {"url": f"data:image/png;base64,{image_b64}"},
+                                    },
+                                ],
+                            }
+                        ],
+                        max_tokens=5000,
+                    )
+
+                    image_text = (response.choices[0].message.content or "").strip()
+                    if image_text:
+                        image_notes.append(
+                            f"[PDF Diagram Page {page_idx + 1}]\n{image_text}"
+                        )
+                    processed_images += 1
+                except Exception as render_err:
+                    print(f"Vision extraction failed for vector diagram on page {page_idx + 1}: {render_err}")
 
             if image_notes:
                 print(f"Vision extracted content from {len(image_notes)} PDF images in {file_path}")
@@ -641,6 +844,9 @@ class VectorService:
             os.makedirs(image_dir, exist_ok=True)
 
             processed_images = 0
+            pages_with_raster: set = set()  # track which pages already have raster images
+
+            # --- Pass 1: extract raster (embedded) images ---
             for page_idx in range(len(doc)):
                 page = doc[page_idx]
                 page_images = page.get_images(full=True)
@@ -678,11 +884,53 @@ class VectorService:
                         db.flush()
                         extracted_docs.append(image_doc)
                         processed_images += 1
+                        pages_with_raster.add(page_idx)
                     except Exception as image_err:
                         print(f"Failed to persist PDF embedded image on page {page_idx + 1}: {image_err}")
 
                 if processed_images >= PDF_VISION_MAX_IMAGES:
                     break
+
+            # --- Pass 2: render pages with vector diagrams (no raster) as images ---
+            for page_idx in range(len(doc)):
+                if processed_images >= PDF_VISION_MAX_IMAGES:
+                    break
+                if page_idx in pages_with_raster:
+                    continue  # already extracted raster images from this page
+
+                page = doc[page_idx]
+                try:
+                    drawings = page.get_drawings()
+                except Exception:
+                    drawings = []
+
+                if len(drawings) < VECTOR_DIAGRAM_MIN_DRAWINGS:
+                    continue
+
+                try:
+                    # Render page at 2x resolution for clarity
+                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+                    image_bytes = pix.tobytes("png")
+
+                    filename = f"{filename_prefix}p{page_idx + 1}_diagram.png"
+                    disk_name = f"{pdf_doc.blog_id}_{uuid.uuid4().hex}_{filename}"
+                    file_path = os.path.join(image_dir, disk_name)
+
+                    with open(file_path, "wb") as f:
+                        f.write(image_bytes)
+
+                    image_doc = ImageDocument(
+                        blog_id=pdf_doc.blog_id,
+                        filename=filename,
+                        file_path=file_path,
+                    )
+                    db.add(image_doc)
+                    db.flush()
+                    extracted_docs.append(image_doc)
+                    processed_images += 1
+                    print(f"  Rendered vector diagram page {page_idx + 1} ({len(drawings)} drawing elements)")
+                except Exception as render_err:
+                    print(f"Failed to render vector diagram on page {page_idx + 1}: {render_err}")
 
             if extracted_docs:
                 db.commit()
@@ -719,8 +967,11 @@ class VectorService:
         # Prepare content for chunking
         full_text = f"PDF: {pdf_doc.filename}\nBlog: {blog.title}\n\n{text}"
 
-        # Split into chunks
-        text_chunks = self.text_splitter.split_text(full_text)
+        # Split into chunks with nearest heading injected into each chunk.
+        text_chunks, section_labels, exact_headings = self._split_with_section_context(
+            full_text,
+            default_section=f"PDF: {pdf_doc.filename}",
+        )
 
         chunks = []
         for i, chunk in enumerate(text_chunks):
@@ -734,6 +985,8 @@ class VectorService:
                     "type": "pdf",
                     "blog_id": pdf_doc.blog_id,
                     "filename": pdf_doc.filename,
+                    "section_heading": section_labels[i] if i < len(section_labels) else "",
+                    "section_heading_exact": exact_headings[i] if i < len(exact_headings) else "",
                     "title": blog.title,
                     "author_email": author.email if author else "Unknown",
                     "author_id": blog.author_id,
@@ -831,6 +1084,129 @@ class VectorService:
 
         return best_domain if best_score > 0 else "unknown"
 
+    def _normalize_diagram_type(self, vision_description: str, extracted_text: str) -> str:
+        """Return a stable diagram family label from noisy vision/OCR text."""
+        haystack = " ".join([vision_description or "", extracted_text or ""]).lower()
+
+        use_case_hints = [
+            "use case", "usecase", "<<include>>", "<<extend>>", "include", "extend",
+            "actor", "actors", "stick figure", "oval", "ovals",
+        ]
+        if any(h in haystack for h in use_case_hints):
+            return "use case diagram"
+
+        if any(h in haystack for h in ["sequence diagram", "lifeline", "message flow", "activation bar"]):
+            return "sequence diagram"
+
+        if any(h in haystack for h in ["class diagram", "attributes", "methods", "inheritance", "association"]):
+            return "class diagram"
+
+        if any(h in haystack for h in ["entity relationship", "er diagram", "crow's foot", "table relationship"]):
+            return "er diagram"
+
+        if any(h in haystack for h in ["data flow diagram", "dfd", "data flow"]):
+            return "data flow diagram"
+
+        if any(h in haystack for h in ["activity diagram"]):
+            return "activity diagram"
+
+        if any(h in haystack for h in ["state diagram", "state machine"]):
+            return "state diagram"
+
+        if any(h in haystack for h in ["component diagram"]):
+            return "component diagram"
+
+        if any(h in haystack for h in ["deployment diagram"]):
+            return "deployment diagram"
+
+        if "flowchart" in haystack or "flow chart" in haystack:
+            return "flowchart"
+
+        return "unknown"
+
+    def _extract_structured_section(self, text: str, section_name: str) -> str:
+        """Extract a named section body from vision output."""
+        if not text:
+            return ""
+
+        next_names = "|".join(_VISION_SECTION_NAMES)
+        escaped_name = re.escape(section_name)
+        pattern = _SECTION_CAPTURE_TEMPLATE.format(name=escaped_name, next_names=next_names)
+        match = re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL)
+        if not match:
+            return ""
+
+        value = (match.group(1) or "").strip()
+        if not value:
+            return ""
+
+        # Normalize dense multi-line bullets into one compact line for retrieval.
+        value = " ".join(value.split())
+        return value
+
+    def _truncate_for_chunk(self, text: str, limit: int) -> str:
+        if not text:
+            return ""
+        compact = " ".join(text.split())
+        return compact if len(compact) <= limit else f"{compact[:limit].rstrip()}..."
+
+    def _build_image_retrieval_text(
+        self,
+        image_doc: ImageDocument,
+        blog_title: str,
+        source_pdf_filename: str | None,
+        vision_description: str,
+        extracted_text: str,
+        image_domain: str,
+        image_tags_text: str,
+        normalized_diagram_type: str,
+    ) -> str:
+        """Build a compact, high-signal retrieval profile for image chunks."""
+        primary = self._extract_structured_section(vision_description, "Primary Subject")
+        secondary = self._extract_structured_section(vision_description, "Secondary Subjects")
+        diagram_type = self._extract_structured_section(vision_description, "Chart/Diagram Type")
+        if not diagram_type:
+            diagram_type = self._extract_structured_section(vision_description, "Chart/Diagram Type (if applicable)")
+        visible_text = self._extract_structured_section(vision_description, "Visible Text (OCR)")
+        if not visible_text:
+            visible_text = self._extract_structured_section(vision_description, "Visible Text and Labels")
+        scene = self._extract_structured_section(vision_description, "Scene and Attributes")
+        facts = self._extract_structured_section(vision_description, "Structured Facts")
+        if not facts:
+            facts = self._extract_structured_section(vision_description, "Important Values and Relationships")
+        keywords = self._extract_structured_section(vision_description, "Keywords")
+
+        lines = [
+            f"Image: {image_doc.filename}",
+            f"Blog: {blog_title}",
+        ]
+        if source_pdf_filename:
+            lines.append(f"Source PDF: {source_pdf_filename}")
+
+        lines.append(f"Domain: {image_domain}")
+        if normalized_diagram_type != "unknown":
+            lines.append(f"Normalized Diagram Type: {normalized_diagram_type}")
+        if primary:
+            lines.append(f"Primary Subject: {self._truncate_for_chunk(primary, 180)}")
+        if diagram_type:
+            lines.append(f"Diagram Type: {self._truncate_for_chunk(diagram_type, 160)}")
+        if secondary:
+            lines.append(f"Secondary Subjects: {self._truncate_for_chunk(secondary, 220)}")
+        if keywords:
+            lines.append(f"Vision Keywords: {self._truncate_for_chunk(keywords, 220)}")
+        if image_tags_text:
+            lines.append(f"Indexed Tags: {self._truncate_for_chunk(image_tags_text, 220)}")
+        if scene:
+            lines.append(f"Scene Summary: {self._truncate_for_chunk(scene, 320)}")
+        if facts:
+            lines.append(f"Structured Facts: {self._truncate_for_chunk(facts, 320)}")
+        if visible_text:
+            lines.append(f"Visible Text: {self._truncate_for_chunk(visible_text, 320)}")
+        if extracted_text:
+            lines.append(f"OCR Text: {self._truncate_for_chunk(extracted_text, 320)}")
+
+        return "\n".join(lines)
+
     def index_image(
         self,
         image_doc: ImageDocument,
@@ -866,16 +1242,6 @@ class VectorService:
         # Use GPT-4 Vision to describe the image
         vision_description = self.describe_image_with_vision(image_doc.file_path)
 
-        # Create searchable text from image-centric metadata plus OCR/vision output.
-        # Do not include full blog body here; it can cause cross-image semantic bleed.
-        full_text = f"Image: {image_doc.filename}\nBlog: {blog.title}"
-        if source_pdf_filename:
-            full_text += f"\nSource PDF: {source_pdf_filename}"
-        if vision_description:
-            full_text += f"\nImage Description: {vision_description}"
-        if extracted_text:
-            full_text += f"\nExtracted Text: {extracted_text}"
-
         image_profile_text = "\n".join([
             str(image_doc.filename or ""),
             str(blog.title or ""),
@@ -885,9 +1251,39 @@ class VectorService:
         ])
         image_domain = self._infer_image_domain(image_profile_text)
         image_tags_text = self._extract_image_tags(image_profile_text)
+        normalized_diagram_type = self._normalize_diagram_type(vision_description, extracted_text)
 
-        # Split into chunks
-        text_chunks = self.text_splitter.split_text(full_text)
+        # Build one high-signal primary chunk, then optionally append a small number
+        # of OCR continuation chunks for long scanned text.
+        primary_chunk = self._build_image_retrieval_text(
+            image_doc=image_doc,
+            blog_title=blog.title,
+            source_pdf_filename=source_pdf_filename,
+            vision_description=vision_description,
+            extracted_text=extracted_text,
+            image_domain=image_domain,
+            image_tags_text=image_tags_text,
+            normalized_diagram_type=normalized_diagram_type,
+        )
+        text_chunks: List[str] = [primary_chunk]
+
+        ocr_text = (extracted_text or "").strip()
+        if ocr_text:
+            capped_ocr = ocr_text[:IMAGE_OCR_MAX_CHARS]
+            ocr_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=700,
+                chunk_overlap=80,
+                length_function=len,
+            )
+            ocr_chunks = ocr_splitter.split_text(capped_ocr)
+            for idx, oc in enumerate(ocr_chunks[:IMAGE_OCR_MAX_EXTRA_CHUNKS]):
+                text_chunks.append(
+                    "\n".join([
+                        f"Image OCR Continuation: {image_doc.filename}",
+                        f"OCR Segment: {idx + 1}",
+                        self._truncate_for_chunk(oc, 900),
+                    ])
+                )
 
         chunks = []
         for i, chunk in enumerate(text_chunks):
@@ -907,6 +1303,7 @@ class VectorService:
                 "total_chunks": len(text_chunks),
                 "image_domain": image_domain,
                 "image_tags_text": image_tags_text,
+                "normalized_diagram_type": normalized_diagram_type,
             }
             if source_pdf_id:
                 metadata["source_pdf_id"] = source_pdf_id
@@ -935,7 +1332,10 @@ class VectorService:
             features.append("OCR")
         if vision_description:
             features.append("Vision")
-        print(f"Indexed image: {image_doc.filename} ({', '.join(features) if features else 'metadata only'})")
+        print(
+            f"Indexed image: {image_doc.filename} "
+            f"({', '.join(features) if features else 'metadata only'}; chunks={len(text_chunks)})"
+        )
 
     def search_similar_chunks(self, query: str, n_results: int = 5, org_id: str = None) -> Dict[str, Any]:
         """Search for similar chunks based on query, scoped to an organization"""
@@ -993,7 +1393,7 @@ BLOG CONTENT (use only if the user asks a real question):
 
         try:
             request_kwargs = {
-                "model": "gpt-4o",
+                "model": OPENAI_CHAT_MODEL,
                 "messages": messages,
                 "temperature": 0.1,
             }
@@ -1038,7 +1438,7 @@ BLOG CONTENT (use only if the user asks a real question):
 
         try:
             request_kwargs = {
-                "model": "gpt-4o",
+                "model": OPENAI_CHAT_MODEL,
                 "messages": messages,
                 "temperature": 0.1,
                 "stream": True,
@@ -1053,6 +1453,236 @@ BLOG CONTENT (use only if the user asks a real question):
                     yield delta.content
         except Exception as e:
             yield f"\nError: {str(e)}"
+
+    def extract_verbatim_structure_lines_llm(self, question: str, context_chunks: List[str]) -> List[str]:
+        """Extract exact structural lines (e.g., use-case names/headings) from provided chunks.
+
+        The model is instructed to copy text verbatim from context and return JSON only.
+        """
+        import os
+        from openai import OpenAI
+
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key or not context_chunks:
+            return []
+
+        client = OpenAI(api_key=api_key)
+        joined_context = "\n\n".join(context_chunks)
+
+        system_msg = (
+            "You extract exact lines from documents. "
+            "Never paraphrase. Never invent. Return strict JSON only."
+        )
+        user_msg = f"""Task: extract exact lines that answer this request:
+{question}
+
+Rules:
+1. Copy lines verbatim from context.
+2. Return only atomic lines, not explanations.
+3. Prefer canonical master-list entries over role-specific duplicate lists.
+4. Keep source order where possible.
+5. If nothing relevant exists, return an empty list.
+
+Return JSON object with this schema exactly:
+{{"lines": ["..."]}}
+
+Context:
+{joined_context}
+"""
+
+        try:
+            response = client.chat.completions.create(
+                model=OPENAI_CHAT_MODEL,
+                temperature=0.0,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ],
+            )
+            content = (response.choices[0].message.content or "").strip()
+            parsed = json.loads(content) if content else {}
+            raw_lines = parsed.get("lines", [])
+            if not isinstance(raw_lines, list):
+                return []
+
+            out: List[str] = []
+            seen: set[str] = set()
+            for item in raw_lines:
+                if not isinstance(item, str):
+                    continue
+                s = " ".join(item.strip().split())
+                if not s:
+                    continue
+                key = s.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(s)
+            return out
+        except Exception as e:
+            print(f"LLM structure extraction failed: {e}")
+            return []
+
+    def classify_structure_query_llm(self, question: str) -> bool:
+        """Return True when the query asks for exhaustive structured extraction.
+
+        This keeps the logic generic and avoids hardcoding topic-specific
+        keywords like abbreviations/use cases/definitions/etc.
+        """
+        import os
+        from openai import OpenAI
+
+        normalized = (question or "").strip()
+        if not normalized:
+            return False
+
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return False
+
+        client = OpenAI(api_key=api_key)
+        system_msg = "You classify document-search queries. Return strict JSON only."
+        user_msg = f"""Decide whether this query is asking for EXHAUSTIVE structured extraction from documents.
+
+Return JSON exactly like this:
+{{"should_extract": true_or_false}}
+
+Set should_extract=true when the user wants a complete list or exhaustive extraction of items from documents.
+Examples include requests for all entries, all named items, exact headings, definitions, requirements, actors, modules, entities, or similar document structure.
+
+Set should_extract=false when the user wants a normal answer, a summary, an explanation, or images/diagrams/visual content.
+
+Query:
+{normalized}
+"""
+
+        try:
+            response = client.chat.completions.create(
+                model=OPENAI_CHAT_MODEL,
+                temperature=0.0,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ],
+            )
+            content = (response.choices[0].message.content or "").strip()
+            parsed = json.loads(content) if content else {}
+            return bool(parsed.get("should_extract", False))
+        except Exception as e:
+            print(f"LLM structure query classification failed: {e}")
+            return False
+
+    def classify_visual_query_intent_llm(self, question: str) -> Dict[str, Any]:
+        """Classify whether a query needs image retrieval and which visual family it targets.
+
+        Returns a dict with keys:
+            should_fetch_images: bool
+            requested_diagram_type: str | None
+            wants_all_matching: bool
+        """
+        import os
+        from openai import OpenAI
+
+        normalized = (question or "").strip()
+        if not normalized:
+            return {
+                "should_fetch_images": False,
+                "requested_diagram_type": None,
+                "wants_all_matching": False,
+            }
+
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return {
+                "should_fetch_images": False,
+                "requested_diagram_type": None,
+                "wants_all_matching": False,
+            }
+
+        client = OpenAI(api_key=api_key)
+        system_msg = "You classify search intent for document and image retrieval. Return strict JSON only."
+        user_msg = f"""Classify this user query for retrieval routing.
+
+Return JSON exactly with this schema:
+{{
+  "should_fetch_images": true_or_false,
+  "requested_diagram_type": "one_of_allowed_values_or_null",
+  "wants_all_matching": true_or_false
+}}
+
+Allowed values for requested_diagram_type:
+- use case diagram
+- er diagram
+- data flow diagram
+- sequence diagram
+- class diagram
+- activity diagram
+- state diagram
+- component diagram
+- deployment diagram
+- flowchart
+- other diagram
+- null
+
+Guidelines:
+1. should_fetch_images=true when the query asks to see/show/list visual items, diagrams, figures, charts, screenshots, photos, or any image-based artifact.
+2. should_fetch_images=false for purely textual explanations/summaries/definitions where visuals are not requested.
+3. wants_all_matching=true only when user intent implies exhaustive visual listing (all/every/complete/set of matching visuals).
+4. requested_diagram_type should be null unless the query clearly targets one diagram family.
+
+Query:
+{normalized}
+"""
+
+        try:
+            response = client.chat.completions.create(
+                model=OPENAI_CHAT_MODEL,
+                temperature=0.0,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ],
+            )
+            content = (response.choices[0].message.content or "").strip()
+            parsed = json.loads(content) if content else {}
+
+            requested = parsed.get("requested_diagram_type")
+            if isinstance(requested, str):
+                requested = requested.strip().lower() or None
+            else:
+                requested = None
+
+            allowed_types = {
+                "use case diagram",
+                "er diagram",
+                "data flow diagram",
+                "sequence diagram",
+                "class diagram",
+                "activity diagram",
+                "state diagram",
+                "component diagram",
+                "deployment diagram",
+                "flowchart",
+                "other diagram",
+            }
+            if requested not in allowed_types:
+                requested = None
+
+            return {
+                "should_fetch_images": bool(parsed.get("should_fetch_images", False)),
+                "requested_diagram_type": requested,
+                "wants_all_matching": bool(parsed.get("wants_all_matching", False)),
+            }
+        except Exception as e:
+            print(f"LLM visual query classification failed: {e}")
+            return {
+                "should_fetch_images": False,
+                "requested_diagram_type": None,
+                "wants_all_matching": False,
+            }
 
     @staticmethod
     def _build_system_message() -> str:
@@ -1073,7 +1703,10 @@ RULES:
 11. CRITICAL — The [Image N] number is FIXED. If the zebra is [Image 1], you MUST write [Image 1] when discussing the zebra. NEVER reassign numbers.
 12. CRITICAL — The subject in the label IS what the image shows. [Image 1 — Zebra] means Image 1 shows a zebra. [Image 2 — Tarsier] means Image 2 shows a tarsier. Describe each image using ONLY its own label's description. NEVER swap descriptions between images.
 13. CRITICAL: If the BLOG CONTENT has no [Image N] labels at all, say no matching images were found. Do not invent images.
-14. When the user asks for images on a topic, show ALL relevant [Image N] entries from the context."""
+14. When the user asks for images on a topic, show ALL relevant [Image N] entries from the context.
+15. CRITICAL — When the BLOG CONTENT contains MULTIPLE images (especially diagrams, use case diagrams, flowcharts, or similar), you MUST list EVERY SINGLE [Image N] marker individually in your response. Do NOT say 'and more', do NOT give only a few examples, do NOT summarize. One line per image. Example: 'Here are all the use case diagrams: [Image 1] [Image 2] [Image 3] ...' continuing until ALL images are listed. This is required — the user needs to see each image.
+16. If the user asks for use cases, diagrams, flowcharts, or similar, those are likely to be in images. Be sure to reference ALL relevant images with [Image N] markers.
+17. If the user asks for all images of a specific kind, include every matching [Image N] marker from context. If there are 11, list all 11."""
 
     @staticmethod
     def _build_messages(system_msg: str, current_prompt: str) -> list[dict]:
