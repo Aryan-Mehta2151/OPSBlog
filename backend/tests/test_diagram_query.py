@@ -51,6 +51,13 @@ n_uc_b = test_query("show me the use case diagrams")
 # Test 4: All diagrams broad query
 n_all = test_query("show me all the diagrams in the srs")
 
+# Test 5: Specific-heading UC queries should each return ~1 image
+n_create = test_query("give me the use case diagram for creating a group of assets")
+n_edit = test_query("give me the use case diagram for editing records")
+n_search = test_query("give me the use case diagram for search")
+n_login = test_query("use case diagram for login")
+n_request = test_query("use case diagram for add new request")
+
 print(f"\n{'='*60}")
 print("SUMMARY:")
 print(f"  DFD query images: {n_dfd}")
@@ -59,3 +66,8 @@ print(f"  Use case diagrams (run 1): {n_uc_a}")
 print(f"  Use case diagrams (run 2): {n_uc_b}")
 print(f"  Consistent UC? {n_uc_a == n_uc_b}")
 print(f"  All diagrams query images: {n_all}")
+print(f"  Specific UC heading 'creating group of assets': {n_create}")
+print(f"  Specific UC heading 'editing records': {n_edit}")
+print(f"  Specific UC heading 'search': {n_search}")
+print(f"  Specific UC heading 'login': {n_login}")
+print(f"  Specific UC heading 'add new request': {n_request}")

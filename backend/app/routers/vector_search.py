@@ -663,11 +663,63 @@ def _classify_visual_intent(question: str) -> dict:
         if not wants_all and requested and re.search(r"\b(show|give|get|display|provide|list)\b", q, re.IGNORECASE):
             wants_all = True
 
+    # If the user added a topic specifier (e.g. "use case diagram FOR creating
+    # assets"), they want one specific diagram, not the whole family.
+    if requested and _has_topic_specifier(q, requested):
+        wants_all = False
+
     return {
         "should_fetch_images": should_fetch,
         "requested_diagram_type": requested,
         "wants_all_matching": wants_all,
     }
+
+
+# Stopwords that don't count as a topic specifier on their own.
+_TOPIC_STOPWORDS = {
+    "show", "shows", "give", "gives", "get", "got", "fetch", "find", "display",
+    "displays", "provide", "provides", "list", "lists", "see", "look", "view",
+    "tell", "explain", "explains", "explained", "describe", "describes",
+    "me", "us", "my", "our", "your", "the", "a", "an", "this", "that", "these",
+    "those", "any", "all", "every", "complete", "entire", "full", "each",
+    "some", "few", "many", "lot", "lots",
+    "image", "images", "picture", "pictures", "pic", "pics", "photo", "photos",
+    "diagram", "diagrams", "figure", "figures", "chart", "charts",
+    "uml", "use", "case", "cases", "usecase", "use-case",
+    "data", "flow", "dfd", "er", "erd", "entity", "relationship", "relationships",
+    "sequence", "class", "classes", "activity", "state", "component", "deployment",
+    "flowchart", "flowcharts",
+    "for", "of", "about", "on", "regarding", "with", "and", "or", "to", "in",
+    "is", "are", "be", "from", "by", "please", "kindly", "can", "could", "would",
+    "you", "u", "do", "does", "i", "we",
+    "srs", "pdf", "doc", "document", "documents", "blog", "blogs",
+    "type", "types", "kind", "kinds", "specific", "particular",
+    "uploaded", "uploads", "upload",
+}
+
+
+def _has_topic_specifier(question: str, requested_type: str) -> bool:
+    """True when the query mentions a topic beyond just the diagram-type words.
+
+    Used to detect "use case diagram FOR creating assets" vs "use case diagrams".
+    """
+    if not question or not requested_type:
+        return False
+    q = question.lower()
+    # Strip the diagram-type phrases themselves so they don't count as topic words.
+    for phrase in (
+        "use case diagram", "use-case diagram", "uc diagram", "usecase diagram",
+        "data flow diagram", "data-flow diagram", "dfd diagram", "dfd",
+        "entity relationship diagram", "entity-relationship diagram",
+        "er diagram", "erd",
+        "sequence diagram", "class diagram", "activity diagram",
+        "state diagram", "component diagram", "deployment diagram",
+        "flowchart",
+    ):
+        q = q.replace(phrase, " ")
+    tokens = re.findall(r"[a-z0-9]+", q)
+    content = [t for t in tokens if t not in _TOPIC_STOPWORDS and len(t) > 2]
+    return len(content) >= 1
 
 
 def is_visual_query(question: str) -> bool:
@@ -1099,12 +1151,17 @@ def _image_limit_for_question(question: str) -> int:
     if not is_visual_query(question):
         return 0
 
+    requested_type = _requested_diagram_type(question)
+
+    # Specific-heading queries: "use case diagram for creating assets" → 1.
+    if requested_type and _has_topic_specifier(question, requested_type):
+        return 1
+
     # For explicit category asks (use case / ER / DFD / etc.), return the full
     # matching set instead of hard-capping to a tiny count.
     if _wants_all_images(question):
         return 60
 
-    requested_type = _requested_diagram_type(question)
     if requested_type is not None:
         return 40
     return 5
@@ -1331,6 +1388,7 @@ def get_relevant_images_for_query(
     # the cluster filter will narrow down later. This prevents mid-range pages
     # from being excluded before the contiguous run can be identified.
     is_diagram_query = _wants_specific_diagram_type(question)
+    has_specifier = is_diagram_query and _has_topic_specifier(question, requested_diagram_type or "")
     gather_limit = max(max_images, 50) if is_diagram_query else max_images
 
     seen: set[str] = set()
@@ -1347,6 +1405,11 @@ def get_relevant_images_for_query(
         results.append(src)
         if len(results) >= gather_limit:
             break
+
+    # Specific-heading query: caller wants exactly one (or a couple) — return
+    # the closest match by embedding distance and skip cluster expansion.
+    if has_specifier:
+        return results[:max_images]
 
     if is_diagram_query:
         if requested_diagram_type == "use case diagram":
@@ -1474,7 +1537,7 @@ def _build_visual_reference_appendix(question: str, image_sources: list[dict]) -
     elif requested_type == "data flow diagram":
         label = "data flow diagram"
     elif requested_type == "use case diagram":
-        label = "use case diagrams"
+        label = "use case diagram" if len(image_sources) == 1 else "use case diagrams"
     elif requested_type:
         label = requested_type
     else:
