@@ -88,28 +88,77 @@ Rules:
 PDF_EMBEDDED_IMAGE_VISION_PROMPT = """
 Describe this PDF-embedded image for retrieval.
 
-Return plain text with these sections:
+Return plain text with these sections (one per line, in this order):
 Primary Subject:
 Secondary Subjects:
-Chart/Diagram Type (if applicable):
+Chart/Diagram Type:
+Diagram Category Tags:
 Functional Intent:
 Diagram Semantics:
 Visible Text and Labels:
 Important Values and Relationships:
 Keywords:
 
-Rules:
-- Be specific and literal.
-- Extract text exactly where possible.
-- Include domain clues (for example wildlife, astronomy, urban, medical, finance).
+General rules:
+- Be specific and literal. Extract visible text exactly where possible.
 - Mark uncertain reads with [uncertain: ...].
-- For diagrams, explain actors/entities/processes/stores/components and how they connect.
-- For non-diagram visuals, explain what task or concept the image supports.
-- For software/UML-style diagrams, classify Chart/Diagram Type using one of:
-    use case diagram, sequence diagram, class diagram, activity diagram, state diagram,
-    component diagram, deployment diagram, ER diagram, data flow diagram, flowchart, other diagram.
-- If you see actors/stick figures interacting with ovals/use-cases, or labels like <<include>> / <<extend>>,
-    classify as "use case diagram".
+- Include domain clues (e.g. wildlife, astronomy, urban, medical, finance, software).
+
+Diagram classification (CRITICAL — read carefully):
+- Chart/Diagram Type MUST be exactly ONE of these literal strings:
+    use case diagram, sequence diagram, class diagram, activity diagram,
+    state diagram, component diagram, deployment diagram, er diagram,
+    data flow diagram, flowchart, other diagram, none.
+- If the image is NOT a software/UML diagram, output "none".
+- Apply this decision tree IN ORDER and stop at the first match:
+
+  1. ER DIAGRAM ("er diagram"):
+     - Boxes labelled with an entity name and a list of attributes inside,
+       connected by lines with cardinality markers (1, N, M, *, crow's-foot
+       notation, "1..*", "0..1") OR diamond-shaped relationship symbols.
+     - No stick-figure actors, no swimlanes, no data-store cylinders.
+     -> classify as "er diagram".
+
+  2. DATA FLOW DIAGRAM ("data flow diagram"):
+     - Rounded rectangles or circles labelled as numbered "Process" / function
+       names, connected by labelled directed arrows (data flows), with
+       open-ended rectangles or parallel lines representing "Data Stores"
+       (often labelled DB, like "Asset DB", "License DB"), and squares
+       representing "External Entities" (e.g. external producers/retailers).
+     - Has explicit data-flow labels on arrows (NOT just control flow).
+     -> classify as "data flow diagram".
+
+  3. USE CASE DIAGRAM ("use case diagram"):
+     - Stick-figure actors connected by lines to ovals (use cases), inside
+       a rectangular system boundary, or labels like <<include>> / <<extend>>.
+     -> classify as "use case diagram".
+
+  4. SEQUENCE DIAGRAM: vertical lifelines with horizontal message arrows.
+  5. CLASS DIAGRAM: boxes split into name/attributes/methods compartments
+     with inheritance/association arrows. NO cardinality on lines (that
+     would be ER).
+  6. ACTIVITY DIAGRAM: rounded rectangles for actions, diamonds for
+     decisions, optionally with swimlanes; start/end nodes (filled circles).
+  7. STATE / COMPONENT / DEPLOYMENT / FLOWCHART per UML conventions.
+  8. Anything else diagrammatic -> "other diagram". Anything non-diagram
+     (photo, screenshot of UI, plain text) -> "none".
+
+- DO NOT default to "use case diagram" when uncertain. If you cannot match
+  any rule, output "other diagram".
+
+Diagram Category Tags:
+- A compact space-separated list of 3-8 distinctive lowercase tags drawn
+  ONLY from the family you classified, e.g.:
+    use case diagram -> use-case actor system-boundary include-relationship
+    er diagram       -> erd entity-relationship cardinality crows-foot
+    data flow diagram-> dfd data-flow data-store external-entity process-bubble
+    sequence diagram -> sequence-diagram lifeline activation-bar
+    class diagram    -> class-diagram inheritance-arrow
+    activity diagram -> activity-diagram swimlane fork-join
+- Do NOT mix tags across families.
+
+Functional Intent: one short sentence describing what the diagram is meant to communicate.
+Diagram Semantics: 1-3 sentences describing the major nodes/edges, in plain words.
 """.strip()
 
 IMAGE_DOMAIN_KEYWORDS = {
@@ -139,6 +188,7 @@ _VISION_SECTION_NAMES = [
     "Primary Subject",
     "Secondary Subjects",
     "Category Signals",
+    "Diagram Category Tags",
     "Visible Text (OCR)",
     "Visible Text and Labels",
     "Scene and Attributes",
@@ -1086,6 +1136,14 @@ class VectorService:
 
     def _normalize_diagram_type(self, vision_description: str, extracted_text: str) -> str:
         """Return a stable diagram family label from noisy vision/OCR text."""
+        raw_type = self._extract_structured_section(vision_description, "Chart/Diagram Type")
+        if not raw_type:
+            raw_type = self._extract_structured_section(vision_description, "Chart/Diagram Type (if applicable)")
+
+        canonical = self._canonicalize_diagram_type(raw_type)
+        if canonical != "unknown":
+            return canonical
+
         haystack = " ".join([vision_description or "", extracted_text or ""]).lower()
 
         use_case_hints = [
@@ -1124,6 +1182,109 @@ class VectorService:
 
         return "unknown"
 
+    def _canonicalize_diagram_type(self, raw_type: str) -> str:
+        text = (raw_type or "").strip().lower()
+        if not text:
+            return "unknown"
+
+        # Exact-match aliases (no substring traps like "er" in "user").
+        aliases = {
+            "use case": "use case diagram",
+            "use-case": "use case diagram",
+            "usecase": "use case diagram",
+            "use case diagram": "use case diagram",
+            "use-case diagram": "use case diagram",
+            "uc diagram": "use case diagram",
+            "uml use case diagram": "use case diagram",
+            "entity relationship": "er diagram",
+            "entity-relationship": "er diagram",
+            "entity relationship diagram": "er diagram",
+            "entity-relationship diagram": "er diagram",
+            "er": "er diagram",
+            "erd": "er diagram",
+            "er diagram": "er diagram",
+            "data flow": "data flow diagram",
+            "data-flow": "data flow diagram",
+            "data flow diagram": "data flow diagram",
+            "data-flow diagram": "data flow diagram",
+            "dfd": "data flow diagram",
+            "sequence": "sequence diagram",
+            "sequence diagram": "sequence diagram",
+            "class": "class diagram",
+            "class diagram": "class diagram",
+            "activity": "activity diagram",
+            "activity diagram": "activity diagram",
+            "state": "state diagram",
+            "state diagram": "state diagram",
+            "state machine": "state diagram",
+            "component": "component diagram",
+            "component diagram": "component diagram",
+            "deployment": "deployment diagram",
+            "deployment diagram": "deployment diagram",
+            "flow chart": "flowchart",
+            "flowchart": "flowchart",
+        }
+
+        if text in aliases:
+            return aliases[text]
+
+        # Whole-phrase containment only — match alias as a complete word/phrase
+        # using word boundaries so "er" never matches inside "user".
+        for key, value in aliases.items():
+            pattern = r"(?<![a-z0-9])" + re.escape(key) + r"(?![a-z0-9])"
+            if re.search(pattern, text):
+                return value
+
+        allowed = {
+            "use case diagram",
+            "sequence diagram",
+            "class diagram",
+            "activity diagram",
+            "state diagram",
+            "component diagram",
+            "deployment diagram",
+            "er diagram",
+            "data flow diagram",
+            "flowchart",
+            "other diagram",
+        }
+        return text if text in allowed else "unknown"
+
+    def _extract_diagram_category_tags(self, vision_description: str, normalized_diagram_type: str) -> str:
+        raw = self._extract_structured_section(vision_description, "Diagram Category Tags")
+        tokens = re.findall(r"[a-z0-9][a-z0-9\-_+]*", (raw or "").lower())
+
+        # Distinctive seed tags only — NO shared tokens like "uml", "process",
+        # "attribute" that match across multiple diagram families and cause
+        # cross-category bleed (e.g., ER tags matching use-case images).
+        seed_tags = {
+            "use case diagram": ["use-case", "actor", "system-boundary", "include-relationship"],
+            "er diagram": ["erd", "entity-relationship", "crows-foot", "cardinality"],
+            "data flow diagram": ["dfd", "data-flow", "data-store", "external-entity"],
+            "sequence diagram": ["sequence-diagram", "lifeline", "activation-bar"],
+            "class diagram": ["class-diagram", "inheritance-arrow"],
+            "activity diagram": ["activity-diagram", "swimlane", "fork-join"],
+            "state diagram": ["state-diagram", "state-transition"],
+            "component diagram": ["component-diagram", "provided-interface"],
+            "deployment diagram": ["deployment-diagram", "deployment-node"],
+            "flowchart": ["flowchart-shape", "decision-diamond"],
+        }
+        tokens.extend(seed_tags.get(normalized_diagram_type, []))
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for token in tokens:
+            if len(token) < 2:
+                continue
+            if token in seen:
+                continue
+            seen.add(token)
+            deduped.append(token)
+            if len(deduped) >= 16:
+                break
+
+        return " ".join(deduped)
+
     def _extract_structured_section(self, text: str, section_name: str) -> str:
         """Extract a named section body from vision output."""
         if not text:
@@ -1160,6 +1321,7 @@ class VectorService:
         image_domain: str,
         image_tags_text: str,
         normalized_diagram_type: str,
+        diagram_category_tags: str,
     ) -> str:
         """Build a compact, high-signal retrieval profile for image chunks."""
         primary = self._extract_structured_section(vision_description, "Primary Subject")
@@ -1174,6 +1336,8 @@ class VectorService:
         facts = self._extract_structured_section(vision_description, "Structured Facts")
         if not facts:
             facts = self._extract_structured_section(vision_description, "Important Values and Relationships")
+        functional_intent = self._extract_structured_section(vision_description, "Functional Intent")
+        diagram_semantics = self._extract_structured_section(vision_description, "Diagram Semantics")
         keywords = self._extract_structured_section(vision_description, "Keywords")
 
         lines = [
@@ -1186,6 +1350,8 @@ class VectorService:
         lines.append(f"Domain: {image_domain}")
         if normalized_diagram_type != "unknown":
             lines.append(f"Normalized Diagram Type: {normalized_diagram_type}")
+        if diagram_category_tags:
+            lines.append(f"Diagram Category Tags: {self._truncate_for_chunk(diagram_category_tags, 220)}")
         if primary:
             lines.append(f"Primary Subject: {self._truncate_for_chunk(primary, 180)}")
         if diagram_type:
@@ -1200,6 +1366,10 @@ class VectorService:
             lines.append(f"Scene Summary: {self._truncate_for_chunk(scene, 320)}")
         if facts:
             lines.append(f"Structured Facts: {self._truncate_for_chunk(facts, 320)}")
+        if functional_intent:
+            lines.append(f"Functional Intent: {self._truncate_for_chunk(functional_intent, 320)}")
+        if diagram_semantics:
+            lines.append(f"Diagram Semantics: {self._truncate_for_chunk(diagram_semantics, 420)}")
         if visible_text:
             lines.append(f"Visible Text: {self._truncate_for_chunk(visible_text, 320)}")
         if extracted_text:
@@ -1252,6 +1422,7 @@ class VectorService:
         image_domain = self._infer_image_domain(image_profile_text)
         image_tags_text = self._extract_image_tags(image_profile_text)
         normalized_diagram_type = self._normalize_diagram_type(vision_description, extracted_text)
+        diagram_category_tags = self._extract_diagram_category_tags(vision_description, normalized_diagram_type)
 
         # Build one high-signal primary chunk, then optionally append a small number
         # of OCR continuation chunks for long scanned text.
@@ -1264,6 +1435,7 @@ class VectorService:
             image_domain=image_domain,
             image_tags_text=image_tags_text,
             normalized_diagram_type=normalized_diagram_type,
+            diagram_category_tags=diagram_category_tags,
         )
         text_chunks: List[str] = [primary_chunk]
 
@@ -1304,6 +1476,7 @@ class VectorService:
                 "image_domain": image_domain,
                 "image_tags_text": image_tags_text,
                 "normalized_diagram_type": normalized_diagram_type,
+                "diagram_category_tags": diagram_category_tags,
             }
             if source_pdf_id:
                 metadata["source_pdf_id"] = source_pdf_id

@@ -379,7 +379,124 @@ class ConversationResponse(BaseModel):
     turns: list[ChatTurnPayload]
 
 
+def _rederive_normalized_diagram_type(stored: str, raw_chunk_text: str) -> str:
+    """Re-canonicalize the diagram type at query time.
+
+    Old indexed chunks may carry a wrong `normalized_diagram_type` written by an
+    earlier buggy canonicalizer (e.g. use-case pages mistakenly labelled as "er
+    diagram" because the substring "er" appears in "user"), or the vision model
+    may have skipped the structured "Chart/Diagram Type:" line entirely.
+
+    Strategy:
+      1. If a real "Diagram Type:" / "Chart/Diagram Type:" line exists, trust it.
+      2. Otherwise scan the *vision-only* fields (Primary Subject, Vision
+         Keywords, Scene Summary) for distinctive phrases. NEVER scan the raw
+         OCR body — the SRS text mentions "use case diagram" near every figure
+         which would mis-label everything.
+    """
+    text = raw_chunk_text or ""
+    if not text:
+        return (stored or "unknown").lower()
+
+    # 1) Explicit Chart/Diagram Type line written *by the vision model itself*.
+    # Use line-start regex so we don't match the substring "Diagram Type:" inside
+    # "Normalized Diagram Type:" (our own buggy stamped label).
+    for pattern in (r"(?:^|\n)\s*Chart/Diagram Type\s*:\s*([^\n]+)",
+                    r"(?:^|\n)\s*Diagram Type\s*:\s*([^\n]+)"):
+        m = re.search(pattern, text, flags=re.IGNORECASE)
+        if not m:
+            continue
+        diagram_type_line = m.group(1).strip()
+        if diagram_type_line:
+            rederived = vector_service._canonicalize_diagram_type(diagram_type_line)
+            if rederived != "unknown":
+                return rederived
+
+    # 2) Vision-only haystack first (most reliable). If those fields aren't
+    #    present in this particular chunk (e.g. OCR-continuation chunks), fall
+    #    back to the full chunk text — but order checks so distinctive ER/DFD
+    #    structural patterns win before broader use-case keywords can match.
+    vision_fields = []
+    for label in (
+        "Primary Subject:",
+        "Secondary Subjects:",
+        "Vision Keywords:",
+        "Scene Summary:",
+        "Diagram Category Tags:",
+        "Functional Intent:",
+        "Diagram Semantics:",
+        "Structured Facts:",
+        "Visible Text:",
+    ):
+        i = text.find(label)
+        if i == -1:
+            continue
+        rest = text[i + len(label):]
+        nl = rest.find("\n")
+        vision_fields.append((rest if nl == -1 else rest[:nl]).strip())
+    haystack = " ".join(vision_fields).lower() if vision_fields else text.lower()
+
+    # ER first — needs explicit ER phrase OR (entity + relationship + cardinality cues).
+    er_explicit = any(p in haystack for p in (
+        "entity-relationship diagram", "entity relationship diagram",
+        "(er diagram)", "er-diagram", " er diagram", "erd ",
+        "crow's foot", "crows foot", "crows-foot",
+    ))
+    er_structural = (
+        ("primary key" in haystack or "foreign key" in haystack)
+        and ("table" in haystack or "schema" in haystack or "entity" in haystack)
+    )
+    if er_explicit or er_structural:
+        return "er diagram"
+
+    # DFD next — needs explicit DFD phrase OR (multiple data-store cues + external entity).
+    dfd_explicit = any(p in haystack for p in (
+        "data flow diagram", "data-flow diagram", " dfd ", "(dfd)",
+        "context diagram", "level 0 dfd", "level 1 dfd",
+        "data store", "external entity",
+    ))
+    db_hits = sum(1 for token in ("asset db", "license db", "location db", "person db") if token in haystack)
+    dfd_structural = db_hits >= 2 and any(w in haystack for w in (
+        "external asset retailer", "barcode producer", "external software producer",
+        "external entity", "external producer", "admin approval",
+    ))
+    if dfd_explicit or dfd_structural:
+        return "data flow diagram"
+
+    # Use case last (after ER/DFD have had their chance).
+    if any(p in haystack for p in (
+        "use case diagram", "use-case diagram", "uml use case",
+        "<<include>>", "<<extend>>", "stick figure", "system boundary",
+        "use case 1", "use case 2",
+    )):
+        return "use case diagram"
+
+    if any(p in haystack for p in ("sequence diagram", "lifeline", "activation bar")):
+        return "sequence diagram"
+    if any(p in haystack for p in ("class diagram", "inheritance arrow")):
+        return "class diagram"
+    if any(p in haystack for p in ("activity diagram", "swimlane")):
+        return "activity diagram"
+    if any(p in haystack for p in ("state diagram", "state machine")):
+        return "state diagram"
+
+    # No structural evidence in this chunk. Don't blindly trust the stored
+    # label for "use case diagram" — the indexer over-applies it whenever the
+    # SRS body mentions "use case" near the figure. Require at least one of
+    # the use-case category tags before keeping it.
+    stored_lc = (stored or "unknown").lower()
+    if stored_lc == "use case diagram":
+        if any(t in haystack for t in (
+            "use-case", "system-boundary", "system boundary", "actor", "stick figure",
+        )):
+            return stored_lc
+        return "unknown"
+    return stored_lc
+
+
 def build_source(metadata: dict, chunk_text: str) -> dict:
+    raw_normalized = metadata.get("normalized_diagram_type", "unknown")
+    rederived = _rederive_normalized_diagram_type(raw_normalized, chunk_text)
     return {
         "title": metadata.get("title", "Unknown"),
         "author": metadata.get("author_email", "Unknown"),
@@ -396,7 +513,8 @@ def build_source(metadata: dict, chunk_text: str) -> dict:
         "source_pdf_filename": metadata.get("source_pdf_filename"),
         "image_domain": metadata.get("image_domain", "unknown"),
         "image_tags_text": metadata.get("image_tags_text", ""),
-        "normalized_diagram_type": metadata.get("normalized_diagram_type", "unknown"),
+        "normalized_diagram_type": rederived,
+        "diagram_category_tags": metadata.get("diagram_category_tags", ""),
     }
 
 
@@ -825,8 +943,7 @@ def _get_relevant_images_by_metadata(
         ]
         if hinted:
             deduped = hinted
-        # Keep a single canonical DFD image in fallback mode.
-        return deduped[:1]
+        return deduped[:max_images]
 
     return deduped[:max_images]
 
@@ -893,47 +1010,76 @@ def _requested_diagram_type(question: str) -> str | None:
 
 def _source_matches_requested_diagram_type(source: dict, requested_type: str) -> bool:
     requested = (requested_type or "").strip().lower()
+    if not requested:
+        return False
     normalized = str(source.get("normalized_diagram_type") or "").strip().lower()
     raw_chunk_text = str(source.get("raw_chunk_text") or "").lower()
+    category_tags = str(source.get("diagram_category_tags") or "").lower()
 
-    dfd_hints = [
-        "asset db", "license db", "location db", "person db",
-        "external asset retailer", "external software producer", "barcode producer",
-        "data flow", "data store", "dfd",
-    ]
-    has_dfd_hints = any(h in raw_chunk_text for h in dfd_hints)
-
+    # 1) Strict exact-category match on normalized type — primary signal.
     if normalized == requested:
         return True
 
-    # Use-case pages are occasionally auto-tagged as flowcharts by vision/OCR.
-    # Include them only for use-case requests so we recover all UC diagram pages
-    # without polluting ER/DFD queries.
-    if requested == "use case diagram" and normalized == "flowchart":
-        if has_dfd_hints:
+    # 2) Distinctive tag fallback. Only tokens that uniquely identify the
+    #    requested family — NO shared tokens like "uml", "process", "attribute".
+    distinctive_tags = {
+        "use case diagram": {"use-case", "system-boundary", "include-relationship"},
+        "er diagram": {"erd", "entity-relationship", "crows-foot", "cardinality"},
+        "data flow diagram": {"dfd", "data-flow", "data-store", "external-entity"},
+        "sequence diagram": {"sequence-diagram", "lifeline", "activation-bar"},
+        "class diagram": {"class-diagram", "inheritance-arrow"},
+        "activity diagram": {"activity-diagram", "swimlane"},
+        "state diagram": {"state-diagram", "state-transition"},
+        "component diagram": {"component-diagram", "provided-interface"},
+        "deployment diagram": {"deployment-diagram", "deployment-node"},
+        "flowchart": {"flowchart-shape", "decision-diamond"},
+    }
+    needed = distinctive_tags.get(requested, set())
+    if needed and any(tag in category_tags for tag in needed):
+        # But guard against cross-tagging: if normalized is a different *known*
+        # diagram family, trust normalized over tags.
+        known_families = set(distinctive_tags.keys())
+        if normalized in known_families and normalized != requested:
             return False
         return True
 
-    # DFD pages are sometimes tagged as flowcharts by vision.
-    if requested == "data flow diagram" and normalized == "flowchart" and has_dfd_hints:
-        return True
+    # 3) DFD-specific structural hint (vision sometimes labels DFDs as
+    #    "flowchart"). Only allow when normalized is unknown/flowchart AND the
+    #    chunk text shows real DFD structural cues, not just a passing mention.
+    if requested == "data flow diagram" and normalized in {"flowchart", "unknown", ""}:
+        dfd_structural_hints = [
+            "data store", "external entity", "process bubble",
+            "level 0 dfd", "level 1 dfd", "context diagram",
+            "asset db", "license db", "location db", "person db",
+        ]
+        if any(h in raw_chunk_text for h in dfd_structural_hints):
+            return True
 
-    # Fallback for older chunks where normalized metadata is missing/noisy.
-    return requested in raw_chunk_text
+    # 4) Use-case structural hint (only when normalized isn't a different known
+    #    family) — recover UC pages tagged as "flowchart" by vision.
+    if requested == "use case diagram" and normalized in {"flowchart", "unknown", ""}:
+        uc_structural_hints = [
+            "actor:", "<<include>>", "<<extend>>",
+            "use case:", "use-case ", "primary actor",
+        ]
+        if any(h in raw_chunk_text for h in uc_structural_hints):
+            return True
+
+    return False
 
 
 def _image_limit_for_question(question: str) -> int:
     if not is_visual_query(question):
         return 0
-    requested_type = _requested_diagram_type(question)
-    if requested_type == "use case diagram":
-        return 11
-    if requested_type in {"er diagram", "data flow diagram"}:
-        return 1
-    if requested_type is not None:
-        return 12
+
+    # For explicit category asks (use case / ER / DFD / etc.), return the full
+    # matching set instead of hard-capping to a tiny count.
     if _wants_all_images(question):
-        return 25
+        return 60
+
+    requested_type = _requested_diagram_type(question)
+    if requested_type is not None:
+        return 40
     return 5
 
 

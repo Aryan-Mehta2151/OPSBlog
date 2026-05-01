@@ -38,20 +38,24 @@ def test_query(question):
     return len(img_sources)
 
 
-# Test 1: DFD should show DFD page (p66)
-n1 = test_query("show me the data flow diagram")
+# Test 1: DFD should show ONLY the DFD page
+n_dfd = test_query("show me the data flow diagram")
 
-# Test 2: All diagrams should show many more than 5
-n2 = test_query("show me all the diagrams in the srs")
+# Test 2: ER should show ONLY the ER diagram
+n_er = test_query("show me the ER diagram")
 
-# Test 3: Consistency - run the same query twice
-n3a = test_query("show me the use case diagrams")
-n3b = test_query("show me the use case diagrams")
+# Test 3: Use case should show all UC pages
+n_uc_a = test_query("show me the use case diagrams")
+n_uc_b = test_query("show me the use case diagrams")
+
+# Test 4: All diagrams broad query
+n_all = test_query("show me all the diagrams in the srs")
 
 print(f"\n{'='*60}")
 print("SUMMARY:")
-print(f"  DFD query images: {n1}")
-print(f"  All diagrams query images: {n2}")
-print(f"  Use case diagrams (run 1): {n3a}")
-print(f"  Use case diagrams (run 2): {n3b}")
-print(f"  Consistent? {n3a == n3b}")
+print(f"  DFD query images: {n_dfd}")
+print(f"  ER query images: {n_er}")
+print(f"  Use case diagrams (run 1): {n_uc_a}")
+print(f"  Use case diagrams (run 2): {n_uc_b}")
+print(f"  Consistent UC? {n_uc_a == n_uc_b}")
+print(f"  All diagrams query images: {n_all}")
