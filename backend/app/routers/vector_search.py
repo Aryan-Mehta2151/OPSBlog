@@ -617,12 +617,34 @@ def _classify_visual_intent(question: str) -> dict:
             "wants_all_matching": False,
         }
 
+    q_lower = q.lower()
+
+    deterministic_requested = None
+    deterministic_patterns = [
+        (r"\b(?:data\s*flow\s*diagram|dfd(?:\s*diagram)?)s?\b", "data flow diagram"),
+        (r"\b(?:entity\s*relationship\s*diagram|entity-relationship\s*diagram|er\s*diagram|erd)s?\b", "er diagram"),
+        (r"\b(?:use\s*case\s*diagram|use-case\s*diagram|uc\s*diagram|usecase\s*diagram)s?\b", "use case diagram"),
+        (r"\bsequence\s*diagram(?:s)?\b", "sequence diagram"),
+        (r"\bclass\s*diagram(?:s)?\b", "class diagram"),
+        (r"\bactivity\s*diagram(?:s)?\b", "activity diagram"),
+        (r"\bstate\s*diagram(?:s)?\b", "state diagram"),
+        (r"\bcomponent\s*diagram(?:s)?\b", "component diagram"),
+        (r"\bdeployment\s*diagram(?:s)?\b", "deployment diagram"),
+        (r"\bflowchart(?:s)?\b", "flowchart"),
+    ]
+    for pattern, diagram_type in deterministic_patterns:
+        if re.search(pattern, q_lower, re.IGNORECASE):
+            deterministic_requested = diagram_type
+            break
+
     llm_result = vector_service.classify_visual_query_intent_llm(q) or {}
     requested = llm_result.get("requested_diagram_type")
     if isinstance(requested, str):
         requested = requested.strip().lower() or None
     else:
         requested = None
+    if not requested and deterministic_requested:
+        requested = deterministic_requested
 
     should_fetch = bool(llm_result.get("should_fetch_images", False))
     wants_all = bool(llm_result.get("wants_all_matching", False))
@@ -633,8 +655,13 @@ def _classify_visual_intent(question: str) -> dict:
         if fallback_visual:
             should_fetch = True
 
+    if requested:
+        should_fetch = True
+
     if should_fetch and not wants_all:
         wants_all = bool(re.search(r"\b(all|every|complete|entire|full|each)\b", q, re.IGNORECASE))
+        if not wants_all and requested and re.search(r"\b(show|give|get|display|provide|list)\b", q, re.IGNORECASE):
+            wants_all = True
 
     return {
         "should_fetch_images": should_fetch,
@@ -1451,13 +1478,38 @@ def _build_visual_reference_appendix(question: str, image_sources: list[dict]) -
     elif requested_type:
         label = requested_type
     else:
-        label = "matched images"
+        label = "images"
 
     markers = [f"[Image {src['context_image_index']}]" for src in image_sources]
     if len(markers) == 1:
         return f"Here is the matched {label} {markers[0]}."
 
     return f"Here are the matched {label}:\n" + "\n".join(markers)
+
+
+def _build_deterministic_visual_answer(question: str, sources: list[dict]) -> str:
+    """Return a stable answer for visual queries without calling the chat model.
+
+    The backend has already selected and numbered the image sources. Keeping
+    this deterministic avoids hallucinated "couldn't find" wording and keeps
+    diagram answers working when the production OpenAI chat quota is exhausted.
+    """
+    image_sources = _get_context_image_sources(sources)
+    if image_sources:
+        return _build_visual_reference_appendix(question, image_sources)
+
+    requested_type = _requested_diagram_type(question)
+    if requested_type == "er diagram":
+        label = "ER diagram"
+    elif requested_type == "data flow diagram":
+        label = "data flow diagram"
+    elif requested_type == "use case diagram":
+        label = "use case diagrams"
+    elif requested_type:
+        label = requested_type
+    else:
+        label = "matching images"
+    return f"I couldn't find any {label} in the indexed content."
 
 
 def _visual_answer_needs_marker_fallback(question: str, answer: str, sources: list[dict]) -> bool:
@@ -1694,11 +1746,13 @@ def query_blogs(
         if structure_context:
             answer_context = [structure_context] + answer_context
 
-        answer = vector_service.generate_answer(
-            data.question, answer_context, max_tokens=max_tokens,
-            detail_level=data.detail_level,
-        )
-        answer = _finalize_visual_answer(data.question, answer, sources)
+        if is_visual_query(data.question):
+            answer = _build_deterministic_visual_answer(data.question, sources)
+        else:
+            answer = vector_service.generate_answer(
+                data.question, answer_context, max_tokens=max_tokens,
+                detail_level=data.detail_level,
+            )
 
         return QueryResponse(answer=answer, sources=sources)
 
@@ -1776,11 +1830,7 @@ def query_blogs_stream(
 
         def event_stream():
             if is_visual_query(data.question):
-                answer = vector_service.generate_answer(
-                    data.question, answer_context, max_tokens=max_tokens,
-                    detail_level=data.detail_level,
-                )
-                answer = _finalize_visual_answer(data.question, answer, sources)
+                answer = _build_deterministic_visual_answer(data.question, sources)
                 for token in _stream_text_chunks(answer):
                     yield f"data: {json.dumps({'type': 'answer', 'content': token})}\n\n"
             else:
