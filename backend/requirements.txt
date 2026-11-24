@@ -27,3 +27,4 @@ pycrdt
 pymupdf
 Pillow
 pytesseract
+psycopg[binary]
